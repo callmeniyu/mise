@@ -32,17 +32,17 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/auth/callback" element={<OAuthCallbackPage />} />
-            
+
             {/* Protected Routes - Require Authentication */}
-            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-            <Route path="/orders" element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
-            <Route path="/menu" element={<ProtectedRoute><MenuPage /></ProtectedRoute>} />
-            <Route path="/inventory" element={<ProtectedRoute><InventoryPage /></ProtectedRoute>} />
-            <Route path="/purchases" element={<ProtectedRoute><PurchasesPage /></ProtectedRoute>} />
-            <Route path="/profit" element={<ProtectedRoute><ProfitPage /></ProtectedRoute>} />
-            <Route path="/payments" element={<ProtectedRoute><PaymentsPage /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-            
+            <Route path="/" element={<Index />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/menu" element={<MenuPage />} />
+            <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/purchases" element={<PurchasesPage />} />
+            <Route path="/profit" element={<ProfitPage />} />
+            <Route path="/payments" element={<PaymentsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+
             {/* Catch-all route */}
             <Route path="*" element={<NotFound />} />
           </Routes>
