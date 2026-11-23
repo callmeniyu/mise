@@ -5,134 +5,96 @@
 @import '@fontsource/inter/400.css';
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
 
 @import 'tailwindcss';
 
 @theme {
-  /* Font Families - Tailwind v4 format */
-  --font-family-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-family-serif: 'Playfair Display', Georgia, serif;
+  /* Typography */
+  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-serif: 'Playfair Display', Georgia, Cambria, serif;
   --default-font-family: var(--font-family-sans);
   
-  /* Custom font utilities */
   --font-display: var(--font-family-serif);
   --font-body: var(--font-family-sans);
 
-  /* Colors - Light Mode */
-  --color-background: hsl(40 33% 98%);
-  --color-foreground: hsl(30 10% 15%);
-  
-  --color-card: hsl(40 30% 99%);
-  --color-card-foreground: hsl(30 10% 15%);
-  
-  --color-popover: hsl(40 30% 99%);
-  --color-popover-foreground: hsl(30 10% 15%);
-  
-  --color-primary: hsl(30 8% 20%);
-  --color-primary-foreground: hsl(40 30% 97%);
-  
-  --color-secondary: hsl(35 15% 93%);
-  --color-secondary-foreground: hsl(30 10% 25%);
-  
-  --color-muted: hsl(35 12% 90%);
-  --color-muted-foreground: hsl(30 8% 45%);
-  
-  --color-accent: hsl(38 45% 65%);
-  --color-accent-foreground: hsl(30 10% 15%);
-  
-  --color-gold: hsl(38 50% 55%);
-  --color-gold-light: hsl(40 45% 75%);
-  --color-gold-muted: hsl(38 30% 85%);
-  
-  --color-success: hsl(145 50% 40%);
-  --color-success-foreground: hsl(0 0% 100%);
-  
-  --color-warning: hsl(38 90% 55%);
-  --color-warning-foreground: hsl(30 10% 15%);
-  
-  --color-info: hsl(200 60% 50%);
-  --color-info-foreground: hsl(0 0% 100%);
-  
-  --color-destructive: hsl(0 65% 50%);
-  --color-destructive-foreground: hsl(0 0% 100%);
-  
-  --color-border: hsl(35 20% 88%);
-  --color-input: hsl(35 20% 88%);
-  --color-ring: hsl(38 45% 65%);
+  /* Mise Premium Hospitality Color Tokens */
+  --color-background: #F6F3EC;
+  --color-foreground: #222923;
 
-  /* Sidebar Colors */
-  --color-sidebar: hsl(38 25% 96%);
-  --color-sidebar-foreground: hsl(30 10% 25%);
-  --color-sidebar-primary: hsl(38 45% 55%);
-  --color-sidebar-primary-foreground: hsl(0 0% 100%);
-  --color-sidebar-accent: hsl(38 30% 90%);
-  --color-sidebar-accent-foreground: hsl(30 10% 20%);
-  --color-sidebar-border: hsl(35 20% 90%);
-  --color-sidebar-ring: hsl(38 45% 65%);
+  --color-card: #FFFEFA;
+  --color-card-foreground: #222923;
 
-  /* Border Radius */
-  --radius-lg: 0.5rem;
-  --radius-md: calc(0.5rem - 2px);
-  --radius-sm: calc(0.5rem - 4px);
+  --color-popover: #FFFEFA;
+  --color-popover-foreground: #222923;
+
+  --color-primary: #202923;
+  --color-primary-foreground: #FFFEFA;
+
+  --color-secondary: #EEEAE1;
+  --color-secondary-foreground: #343C35;
+
+  --color-muted: #EAE6DC;
+  --color-muted-foreground: #7B817B;
+
+  --color-accent: #E65B45;
+  --color-accent-foreground: #FFFFFF;
+
+  /* Custom Mise Named Accents */
+  --color-terracotta: #E65B45;
+  --color-terracotta-light: #FCEFEA;
+  --color-sage: #9EAF91;
+  --color-sage-light: #F0F4EE;
+  --color-butter: #E9C978;
+  --color-butter-light: #FCF8EE;
+  --color-charcoal: #202923;
+  --color-charcoal-subtle: #2C3730;
+
+  --color-success: #52866A;
+  --color-success-foreground: #FFFFFF;
+  --color-success-light: #EEF5F1;
+
+  --color-warning: #D69A43;
+  --color-warning-foreground: #202923;
+  --color-warning-light: #FAF4E8;
+
+  --color-info: #487588;
+  --color-info-foreground: #FFFFFF;
+  --color-info-light: #EDF3F6;
+
+  --color-destructive: #D85A4B;
+  --color-destructive-foreground: #FFFFFF;
+  --color-destructive-light: #FCEDEB;
+
+  --color-border: #E7E3D9;
+  --color-input: #E7E3D9;
+  --color-ring: #202923;
+
+  /* Sidebar Dark Charcoal */
+  --color-sidebar: #202923;
+  --color-sidebar-foreground: #E0E5E1;
+  --color-sidebar-primary: #E65B45;
+  --color-sidebar-primary-foreground: #FFFFFF;
+  --color-sidebar-accent: #2B362F;
+  --color-sidebar-accent-foreground: #FFFFFF;
+  --color-sidebar-border: #2B362F;
+  --color-sidebar-muted: #858E86;
+  --color-sidebar-ring: #E65B45;
+
+  /* Radius */
+  --radius-lg: 0.625rem;
+  --radius-md: 0.5rem;
+  --radius-sm: 0.375rem;
 
   /* Shadows */
-  --shadow-soft: 0 2px 8px -2px hsl(30 10% 20% / 0.08);
-  --shadow-card: 0 4px 16px -4px hsl(30 10% 20% / 0.1);
-  --shadow-elevated: 0 8px 30px -8px hsl(30 10% 20% / 0.15);
-
-  /* Animations */
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-  
-  @keyframes accordion-down {
-    from { height: 0; }
-    to { height: var(--radix-accordion-content-height); }
-  }
-  
-  @keyframes accordion-up {
-    from { height: var(--radix-accordion-content-height); }
-    to { height: 0; }
-  }
+  --shadow-subtle: 0 1px 3px rgba(32, 41, 35, 0.05);
+  --shadow-card: 0 2px 10px -2px rgba(32, 41, 35, 0.06), 0 1px 3px -1px rgba(32, 41, 35, 0.04);
+  --shadow-elevated: 0 12px 32px -8px rgba(32, 41, 35, 0.12), 0 4px 10px -2px rgba(32, 41, 35, 0.05);
 }
 
 @layer base {
   :root {
     color-scheme: light;
-  }
-
-  .dark {
-    color-scheme: dark;
-    --color-background: hsl(30 10% 8%);
-    --color-foreground: hsl(40 20% 95%);
-    --color-card: hsl(30 10% 10%);
-    --color-card-foreground: hsl(40 20% 95%);
-    --color-popover: hsl(30 10% 10%);
-    --color-popover-foreground: hsl(40 20% 95%);
-    --color-primary: hsl(38 45% 65%);
-    --color-primary-foreground: hsl(30 10% 10%);
-    --color-secondary: hsl(30 10% 15%);
-    --color-secondary-foreground: hsl(40 20% 90%);
-    --color-muted: hsl(30 10% 18%);
-    --color-muted-foreground: hsl(35 15% 60%);
-
-    --color-accent: hsl(38 50% 55%);
-    --color-accent-foreground: hsl(30 10% 10%);
-    --color-gold: hsl(38 55% 60%);
-    --color-gold-light: hsl(40 50% 70%);
-    --color-gold-muted: hsl(38 30% 25%);
-    --color-destructive: hsl(0 60% 45%);
-    --color-destructive-foreground: hsl(0 0% 100%);
-    --color-border: hsl(30 10% 20%);
-    --color-input: hsl(30 10% 20%);
-    --color-ring: hsl(38 50% 55%);
-    --color-sidebar: hsl(30 10% 6%);
-    --color-sidebar-foreground: hsl(40 20% 90%);
-    --color-sidebar-primary: hsl(38 50% 55%);
-    --color-sidebar-primary-foreground: hsl(30 10% 10%);
-    --color-sidebar-accent: hsl(30 10% 15%);
-    --color-sidebar-accent-foreground: hsl(40 20% 90%);
-    --color-sidebar-border: hsl(30 10% 18%);
-    --color-sidebar-ring: hsl(38 50% 55%);
   }
 
   * {
@@ -149,6 +111,7 @@
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
+    letter-spacing: -0.015em;
   }
 }
 
@@ -160,5 +123,31 @@
   .font-body {
     font-family: var(--font-body);
   }
-}
 
+  .card-premium {
+    background-color: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    transition: all 0.2s ease-in-out;
+  }
+
+  .card-premium:hover {
+    box-shadow: var(--shadow-elevated);
+    border-color: #DCD7CB;
+  }
+
+  .stat-card {
+    background-color: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    box-shadow: var(--shadow-card);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+}

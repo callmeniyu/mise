@@ -1,6 +1,16 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bell, Search, User, LogOut, Settings, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import {
+  Bell,
+  Search,
+  User as UserIcon,
+  LogOut,
+  Settings,
+  Menu as MenuIcon,
+  Database,
+  ExternalLink,
+  CheckCircle2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -13,6 +23,7 @@ import {
 import { useProfile, useSearch } from '@/hooks/api';
 import { useNotifications } from '@/hooks/use-notifications';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLayout } from '@/contexts/LayoutContext';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -24,177 +35,333 @@ interface HeaderProps {
 export function Header({ title, subtitle }: HeaderProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { setMobileMenuOpen } = useLayout();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  // API hooks
-  const { data: profile, isLoading: profileLoading } = useProfile();
-  const { data: searchResults = [] } = useSearch(searchQuery);
+  const { data: profile } = useProfile();
+  const { data: searchResults } = useSearch(searchQuery);
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
 
-  const handleLogout = async () => {
-    await logout();
-    toast.success('Logged out successfully');
+  // Close search popup when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowSearchResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    toast.success('Logged out from demo session');
     navigate('/login');
   };
 
-  const handleSettingsClick = () => {
-    navigate('/settings');
-  };
-
   const handleNotificationClick = (notification: any) => {
-    if (!notification.is_read) {
+    if (!notification.isRead) {
       markAsRead(notification.id);
     }
 
-    // Navigate based on type
-    if (notification.reference_type === 'Order' && notification.reference_id) {
-      navigate(`/orders/${notification.reference_id}`);
-    } else if (notification.reference_type === 'Inventory' && notification.reference_id) {
-      navigate('/inventory'); // Or specific item if route exists
-    } else if (notification.type === 'Alert') {
-      // Go to where alerts might be relevant, maybe dashboard or inventory
+    if (notification.referenceType === 'Order') {
+      navigate('/orders');
+    } else if (notification.referenceType === 'Inventory') {
+      navigate('/inventory');
+    } else if (notification.referenceType === 'Payment') {
+      navigate('/payments');
+    } else if (notification.referenceType === 'Purchase') {
+      navigate('/purchases');
     }
   };
 
+  const totalResultsCount =
+    (searchResults?.orders.length || 0) +
+    (searchResults?.menuItems.length || 0) +
+    (searchResults?.inventory.length || 0) +
+    (searchResults?.suppliers.length || 0);
+
   return (
-    <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b border-border">
-      <div className="flex items-center justify-between px-8 py-4">
-        <div>
-          {/* Display Business Name if available */}
-          {profile?.name && (
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
-              {profile.name}
-            </p>
-          )}
-          <h1 className="font-display text-2xl font-semibold text-foreground">{title}</h1>
-          {subtitle && (
-            <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
-          )}
+    <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-md border-b border-border">
+      <div className="flex items-center justify-between px-4 sm:px-8 py-3.5">
+        {/* Left: Mobile hamburger & Page Title */}
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="lg:hidden text-foreground hover:bg-secondary"
+            aria-label="Open mobile menu"
+          >
+            <MenuIcon className="w-5 h-5" />
+          </Button>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-2xl font-bold text-foreground leading-tight">{title}</h1>
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-secondary-foreground bg-secondary px-2 py-0.5 rounded-full">
+                <Database className="w-3 h-3 text-sage" />
+                Local Demo
+              </span>
+            </div>
+            {subtitle && <p className="text-xs text-muted-foreground mt-0.5 font-medium">{subtitle}</p>}
+          </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          {/* Search */}
-          <div className="relative hidden md:block">
+        {/* Right: Search, Notifications & User */}
+        <div className="flex items-center gap-2.5 sm:gap-4">
+          {/* Global Search */}
+          <div ref={searchContainerRef} className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search orders, menu..."
+              placeholder="Search orders, dishes, stock..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setShowSearchResults(e.target.value.length > 0);
+                setShowSearchResults(e.target.value.length >= 2);
               }}
-              onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
-              className="w-64 pl-10 bg-secondary/50 border-transparent focus:border-gold/30 focus:bg-card"
+              onFocus={() => {
+                if (searchQuery.length >= 2) setShowSearchResults(true);
+              }}
+              className="w-60 lg:w-72 pl-9 bg-card border-border hover:border-muted-foreground/30 focus:border-terracotta focus:ring-0 text-sm h-9 rounded-lg transition-all"
             />
-            {showSearchResults && searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                {searchResults.slice(0, 5).map((result, idx) => (
-                  <div
-                    key={idx}
-                    className="px-4 py-2 hover:bg-secondary/50 cursor-pointer text-sm border-b border-border last:border-b-0"
-                  >
-                    {result.name || result.client_name || result.supplier_name}
+
+            {/* Live Search Autocomplete Dropdown */}
+            {showSearchResults && (
+              <div className="absolute top-full right-0 mt-2 w-96 bg-card border border-border rounded-xl shadow-elevated max-h-96 overflow-y-auto p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                {totalResultsCount === 0 ? (
+                  <div className="p-4 text-center text-xs text-muted-foreground">
+                    No matching records found for "{searchQuery}".
                   </div>
-                ))}
+                ) : (
+                  <div className="space-y-3">
+                    {/* Orders */}
+                    {searchResults && searchResults.orders.length > 0 && (
+                      <div>
+                        <p className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Orders
+                        </p>
+                        {searchResults.orders.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => {
+                              navigate(item.link);
+                              setShowSearchResults(false);
+                            }}
+                            className="px-3 py-1.5 rounded-md hover:bg-secondary cursor-pointer text-xs flex justify-between items-center"
+                          >
+                            <div>
+                              <p className="font-semibold text-foreground">{item.title}</p>
+                              <p className="text-[11px] text-muted-foreground">{item.subtitle}</p>
+                            </div>
+                            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Menu */}
+                    {searchResults && searchResults.menuItems.length > 0 && (
+                      <div>
+                        <p className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Menu & Costing
+                        </p>
+                        {searchResults.menuItems.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => {
+                              navigate(item.link);
+                              setShowSearchResults(false);
+                            }}
+                            className="px-3 py-1.5 rounded-md hover:bg-secondary cursor-pointer text-xs flex justify-between items-center"
+                          >
+                            <div>
+                              <p className="font-semibold text-foreground">{item.title}</p>
+                              <p className="text-[11px] text-muted-foreground">{item.subtitle}</p>
+                            </div>
+                            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Inventory */}
+                    {searchResults && searchResults.inventory.length > 0 && (
+                      <div>
+                        <p className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Inventory Stock
+                        </p>
+                        {searchResults.inventory.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => {
+                              navigate(item.link);
+                              setShowSearchResults(false);
+                            }}
+                            className="px-3 py-1.5 rounded-md hover:bg-secondary cursor-pointer text-xs flex justify-between items-center"
+                          >
+                            <div>
+                              <p className="font-semibold text-foreground">{item.title}</p>
+                              <p className="text-[11px] text-muted-foreground">{item.subtitle}</p>
+                            </div>
+                            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Suppliers */}
+                    {searchResults && searchResults.suppliers.length > 0 && (
+                      <div>
+                        <p className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Suppliers
+                        </p>
+                        {searchResults.suppliers.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => {
+                              navigate(item.link);
+                              setShowSearchResults(false);
+                            }}
+                            className="px-3 py-1.5 rounded-md hover:bg-secondary cursor-pointer text-xs flex justify-between items-center"
+                          >
+                            <div>
+                              <p className="font-semibold text-foreground">{item.title}</p>
+                              <p className="text-[11px] text-muted-foreground">{item.subtitle}</p>
+                            </div>
+                            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Notifications */}
+          {/* Notifications Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="w-5 h-5 text-muted-foreground" />
+              <Button
+                variant="outline"
+                size="icon"
+                className="relative h-9 w-9 border-border bg-card hover:bg-secondary rounded-lg"
+                aria-label="Notifications"
+              >
+                <Bell className="w-4 h-4 text-foreground" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-gold text-[10px] font-bold text-primary-foreground rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-terracotta text-[10px] font-bold text-white rounded-full flex items-center justify-center shadow-xs">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-                <h4 className="font-semibold text-sm">Notifications</h4>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-gold h-auto p-0 hover:bg-transparent hover:text-gold/80"
-                  onClick={() => markAllAsRead()}
-                >
-                  Mark all as read
-                </Button>
+            <DropdownMenuContent align="end" className="w-80 sm:w-96 p-0 border border-border shadow-elevated rounded-xl">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+                <div>
+                  <h4 className="font-display font-semibold text-sm text-foreground">Operational Alerts</h4>
+                  <p className="text-[11px] text-muted-foreground">{unreadCount} unread local events</p>
+                </div>
+                {unreadCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-terracotta h-auto p-1 hover:bg-terracotta-light"
+                    onClick={() => markAllAsRead()}
+                  >
+                    Mark all read
+                  </Button>
+                )}
               </div>
-              <div className="max-h-[300px] overflow-y-auto">
+
+              <div className="max-h-[360px] overflow-y-auto divide-y divide-border/60">
                 {notifications.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    No notifications
+                    <CheckCircle2 className="w-6 h-6 mx-auto mb-2 text-sage" />
+                    No operational alerts
                   </div>
                 ) : (
-                  notifications.map((notification: any) => (
-                    <DropdownMenuItem
+                  notifications.map((notification) => (
+                    <div
                       key={notification.id}
-                      className="cursor-pointer px-4 py-3 border-b border-border last:border-0 align-items-start flex-col items-start gap-1 relative"
                       onClick={() => handleNotificationClick(notification)}
+                      className={`p-3.5 cursor-pointer hover:bg-secondary/60 transition-colors flex flex-col gap-1 ${
+                        !notification.isRead ? 'bg-terracotta-light/40' : ''
+                      }`}
                     >
                       <div className="flex items-center justify-between w-full">
-                        <span className={`font-medium text-sm ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        <span
+                          className={`font-semibold text-xs ${
+                            !notification.isRead ? 'text-foreground' : 'text-muted-foreground'
+                          }`}
+                        >
                           {notification.title}
                         </span>
                         <span className="text-[10px] text-muted-foreground">
-                          {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                          {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
-                      {!notification.is_read && (
-                        <span className="w-2 h-2 rounded-full bg-gold absolute right-2 top-1/2 -translate-y-1/2 opacity-50" />
-                      )}
-                    </DropdownMenuItem>
+                      <p className="text-xs text-secondary-foreground leading-relaxed">
+                        {notification.message}
+                      </p>
+                    </div>
                   ))
                 )}
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Profile Dropdown */}
+          {/* User Profile Pill Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
-                variant="ghost"
-                size="icon"
-                className="w-9 h-9 rounded-full bg-gold/10 hover:bg-gold/20"
-                disabled={profileLoading}
+                variant="outline"
+                className="flex items-center gap-2 pl-2 pr-3 h-9 bg-card border-border hover:bg-secondary rounded-lg"
               >
-                {profileLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-gold" />
-                ) : (
-                  <User className="w-5 h-5 text-gold" />
-                )}
+                <div className="w-6 h-6 rounded-md bg-charcoal text-white flex items-center justify-center text-xs font-semibold">
+                  {user?.firstName?.charAt(0) || 'J'}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-xs font-semibold text-foreground leading-tight">
+                    {user?.firstName} {user?.lastName}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground font-medium capitalize">
+                    {user?.role || 'Admin'}
+                  </p>
+                </div>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {user ? (
-                <>
-                  <div className="px-4 py-3 border-b border-border">
-                    <p className="font-semibold text-sm">{user.first_name} {user.last_name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{user.email}</p>
-                    <p className="text-xs text-gold font-medium mt-1 capitalize">{user.role}</p>
-                  </div>
-                  <DropdownMenuItem onClick={handleSettingsClick}>
-                    <Settings className="w-4 h-4 mr-2" />
-                    <span>Settings</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout}>
-                    <LogOut className="w-4 h-4 mr-2" />
-                    <span>Logout</span>
-                  </DropdownMenuItem>
-                </>
-              ) : (
-                <div className="px-4 py-3 text-sm text-muted-foreground">
-                  Loading profile...
-                </div>
-              )}
+            <DropdownMenuContent align="end" className="w-56 p-1 border-border shadow-elevated rounded-xl">
+              <div className="px-3 py-2 border-b border-border">
+                <p className="font-semibold text-xs text-foreground">
+                  {user?.firstName} {user?.lastName}
+                </p>
+                <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+                <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-sage/20 text-success uppercase">
+                  {user?.role}
+                </span>
+              </div>
+
+              <DropdownMenuItem
+                onClick={() => navigate('/settings')}
+                className="cursor-pointer text-xs py-2 focus:bg-secondary"
+              >
+                <Settings className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                <span>Business Settings</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="cursor-pointer text-xs py-2 text-destructive focus:bg-destructive-light focus:text-destructive"
+              >
+                <LogOut className="w-3.5 h-3.5 mr-2" />
+                <span>Sign Out Demo</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

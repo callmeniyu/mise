@@ -1,27 +1,36 @@
-import { Link } from "react-router-dom";
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft, Compass } from 'lucide-react';
+import { MiseLogo } from '@/components/brand/MiseLogo';
 
-const NotFound = () => {
+export default function NotFound() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-secondary/20 to-gold/10">
-      <div className="text-center px-4">
-        <div className="mb-8">
-          <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-gold to-gold-light flex items-center justify-center mb-6">
-            <span className="text-5xl font-display font-bold text-primary">404</span>
-          </div>
+    <div className="flex min-h-screen flex-col items-center justify-between p-6 bg-background text-foreground">
+      <MiseLogo />
+
+      <div className="text-center max-w-md p-8 card-premium shadow-card my-auto">
+        <div className="w-16 h-16 rounded-2xl bg-terracotta-light text-terracotta mx-auto flex items-center justify-center mb-4">
+          <Compass className="w-8 h-8" />
         </div>
-        <h1 className="mb-4 text-4xl font-display font-bold text-foreground">Page Not Found</h1>
-        <p className="mb-8 text-lg text-muted-foreground max-w-md mx-auto">
-          The page you're looking for doesn't exist or has been moved.
+        <span className="text-xs font-mono font-bold text-muted-foreground uppercase tracking-widest">
+          Error 404
+        </span>
+        <h1 className="font-display text-2xl font-bold text-foreground mt-1 mb-2">
+          Operational Station Not Found
+        </h1>
+        <p className="text-xs text-secondary-foreground mb-6 leading-relaxed">
+          The requested station or culinary route does not exist in this workspace.
         </p>
-        <Link 
-          to="/" 
-          className="inline-flex items-center justify-center px-6 py-3 bg-gold hover:bg-gold-light text-primary-foreground rounded-lg font-medium transition-colors"
-        >
-          Return to Dashboard
+
+        <Link to="/">
+          <Button className="bg-charcoal text-white hover:bg-charcoal/90 text-xs h-9">
+            <ArrowLeft className="w-4 h-4 mr-1.5" />
+            Return to Operations Command
+          </Button>
         </Link>
       </div>
+
+      <p className="text-[11px] text-muted-foreground">Mise Culinary Operations Platform</p>
     </div>
   );
-};
-
-export default NotFound;
+}

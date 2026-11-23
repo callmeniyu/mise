@@ -1,71 +1,71 @@
-import { Calendar, Clock, MapPin } from 'lucide-react';
 import { Order } from '@/types';
-import { cn } from '@/lib/utils';
+import { Calendar, Users, ArrowUpRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
 
 interface UpcomingEventsProps {
   orders: Order[];
 }
 
-export function UpcomingEvents({ orders }: UpcomingEventsProps) {
-  const upcomingOrders = orders
-    .filter(o => o.status !== 'Delivered' && o.status !== 'Closed')
-    .sort((a, b) => new Date(a.event_date).getTime() - new Date(b.event_date).getTime())
+export function UpcomingEvents({ orders = [] }: UpcomingEventsProps) {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const upcoming = orders
+    .filter((o) => o.eventDate >= todayStr && o.status !== 'Closed')
+    .sort((a, b) => a.eventDate.localeCompare(b.eventDate))
     .slice(0, 4);
 
   return (
-    <div className="card-premium p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="font-display text-lg font-semibold text-foreground">Upcoming Events</h3>
-          <p className="text-sm text-muted-foreground">Next scheduled orders</p>
+    <div className="card-premium p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-charcoal text-white flex items-center justify-center">
+            <Calendar className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="font-display text-base font-bold text-foreground">Upcoming Banquets</h3>
+            <p className="text-[11px] text-muted-foreground">Kitchen event schedule</p>
+          </div>
         </div>
-        <Calendar className="w-5 h-5 text-gold" />
+
+        <Link
+          to="/orders"
+          className="text-xs text-terracotta hover:underline font-semibold flex items-center gap-1"
+        >
+          View all <ArrowUpRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
 
-      <div className="space-y-4">
-        {upcomingOrders.map((order, index) => {
-          const eventDate = new Date(order.event_date);
-          const today = new Date();
-          const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          const isUrgent = daysUntil <= 2;
-
-          return (
-            <div 
-              key={order.id}
-              className={cn(
-                "p-4 rounded-lg border transition-all duration-200 hover:border-gold/30",
-                isUrgent ? "bg-warning/5 border-warning/20" : "bg-secondary/30 border-transparent"
-              )}
-              style={{ animationDelay: `${index * 100}ms` }}
+      <div className="space-y-2.5 mt-2">
+        {upcoming.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-6 text-center">No upcoming events scheduled.</p>
+        ) : (
+          upcoming.map((event) => (
+            <div
+              key={event.id}
+              className="p-3 rounded-lg border border-border bg-card hover:bg-secondary/40 transition-colors flex items-center justify-between text-xs"
             >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="font-medium text-foreground text-sm">{order.client_name}</p>
-                  <p className="text-xs text-muted-foreground">{order.event_type}</p>
+              <div className="min-w-0 pr-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-foreground truncate">{event.clientName}</span>
                 </div>
-                <span className={cn(
-                  "text-xs font-semibold px-2 py-0.5 rounded-full",
-                  isUrgent ? "bg-warning/10 text-warning" : "bg-gold/10 text-gold"
-                )}>
-                  {daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil} days`}
-                </span>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                  <span className="font-medium text-foreground">{event.eventDate}</span>
+                  <span>•</span>
+                  <span>{event.eventType}</span>
+                </div>
               </div>
-              
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  <span>{eventDate.toLocaleDateString('en-PK', { day: 'numeric', month: 'short' })}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span>{order.guest_count} guests</span>
+
+              <div className="text-right flex flex-col items-end flex-shrink-0">
+                <Badge variant="outline" className="text-[10px] py-0 px-2 border-border mb-1">
+                  {event.status}
+                </Badge>
+                <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Users className="w-3 h-3" />
+                  <span>{event.guestCount}</span>
                 </div>
               </div>
             </div>
-          );
-        })}
-
-        {upcomingOrders.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-4">No upcoming events</p>
+          ))
         )}
       </div>
     </div>

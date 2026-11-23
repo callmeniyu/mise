@@ -1,52 +1,49 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState } from 'react';
-import config from '@/config';
-
-interface User {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  phone?: string;
-  role: 'admin' | 'user';
-  is_active: boolean;
-}
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { authService, DEMO_CREDENTIALS } from '@/services/auth.service';
+import { User } from '@/types';
 
 interface AuthContextType {
   user: User | null;
-  login: (user: User) => void;
+  login: (credentials: { email: string; password?: string }) => { success: boolean; user?: User; error?: string };
+  loginDemo: () => User;
   logout: () => void;
   isAdmin: () => boolean;
   isAuthenticated: () => boolean;
+  demoCredentials: typeof DEMO_CREDENTIALS;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const storedUser = localStorage.getItem('user');
-    return storedUser ? JSON.parse(storedUser) : null;
-  });
+  const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
 
-  const login = (userData: User) => {
-    setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
-    // Token is stored in HTTP-only cookie by backend
+  useEffect(() => {
+    // Sync if storage event occurs
+    const handleStorageChange = () => {
+      setUser(authService.getCurrentUser());
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  const login = (credentials: { email: string; password?: string }) => {
+    const res = authService.login(credentials);
+    if (res.success && res.user) {
+      setUser(res.user);
+    }
+    return res;
   };
 
-  const logout = async () => {
-    try {
-      await fetch(`${config.apiUrl}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+  const loginDemo = () => {
+    const demoUser = authService.loginDemoUser();
+    setUser(demoUser);
+    return demoUser;
+  };
 
+  const logout = () => {
+    authService.logout();
     setUser(null);
-    localStorage.removeItem('user');
-    // Token is cleared by backend (HTTP-only cookie)
   };
 
   const isAdmin = () => {
@@ -62,9 +59,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         login,
+        loginDemo,
         logout,
         isAdmin,
         isAuthenticated,
+        demoCredentials: DEMO_CREDENTIALS,
       }}
     >
       {children}
