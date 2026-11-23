@@ -1,11 +1,20 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { useOrders, useCreateOrder, useUpdateOrder, useDeleteOrder, useMenuItems } from '@/hooks/api';
-import { Order, OrderStatus, ClientType } from '@/types';
+import {
+  useOrders,
+  useCreateOrder,
+  useUpdateOrder,
+  useDeleteOrder,
+  useMenuItems,
+  useProcessPayment,
+} from '@/hooks/api';
+import { Order, OrderStatus, ClientType, EventType } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -26,589 +35,883 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Plus, Search, Filter, Eye, Edit, Trash2, Loader2, X } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Filter,
+  Eye,
+  Edit,
+  Trash2,
+  Calendar,
+  Users,
+  CreditCard,
+  CheckCircle2,
+  Clock,
+  ArrowRight,
+  Receipt,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
-const statusColors: Record<string, string> = {
-  'Inquiry': 'bg-info/10 text-info border-info/20',
-  'Confirmed': 'bg-gold/10 text-gold border-gold/20',
-  'In Progress': 'bg-warning/10 text-warning border-warning/20',
-  'Delivered': 'bg-success/10 text-success border-success/20',
-  'Closed': 'bg-muted text-muted-foreground border-muted',
+const STATUS_OPTIONS: OrderStatus[] = ['Inquiry', 'Confirmed', 'In Progress', 'Delivered', 'Closed'];
+const CLIENT_TYPES: ClientType[] = ['Wedding', 'Corporate', 'Family', 'Individual'];
+const EVENT_TYPES: EventType[] = [
+  'Wedding',
+  'Corporate Lunch',
+  'Private Event',
+  'Catering Banquet',
+  'Gala Dinner',
+  'Family Celebration',
+];
+
+const statusBadgeStyles: Record<OrderStatus, string> = {
+  Inquiry: 'bg-info-light text-info border-info/30',
+  Confirmed: 'bg-butter-light text-warning border-butter',
+  'In Progress': 'bg-sage-light text-success border-sage/40',
+  Delivered: 'bg-success-light text-success border-success/40',
+  Closed: 'bg-muted text-muted-foreground border-border',
 };
 
 export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [isNewOrderDialogOpen, setIsNewOrderDialogOpen] = useState(false);
-  const [orderType, setOrderType] = useState<'event' | 'solo'>('event');
-  const [selectedMenuItems, setSelectedMenuItems] = useState<Array<{ id: string; name: string; price: number; quantity: number }>>([]);
-  const [selectedItemId, setSelectedItemId] = useState('');
-  const [selectedItemQuantity, setSelectedItemQuantity] = useState('1');
+  const [clientTypeFilter, setClientTypeFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
+
+  // Dialogs
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+
+  // Form State
   const [formData, setFormData] = useState({
-    client_name: '',
-    client_type: 'Individual' as ClientType,
-    event_date: '',
-    event_type: '',
-    guest_count: '',
-    price_per_head: '',
-    order_date: '',
-    description: '',
-    total_amount: '',
+    clientName: '',
+    clientEmail: '',
+    clientPhone: '',
+    clientType: 'Wedding' as ClientType,
+    eventType: 'Wedding' as EventType,
+    eventDate: new Date().toISOString().split('T')[0],
+    guestCount: 100,
+    pricePerHead: 2500,
+    advanceReceived: 50000,
+    notes: '',
+    selectedDishes: [] as string[],
   });
 
-  // API hooks
-  const { data: orders = [], isLoading, error, refetch } = useOrders();
+  // API Hooks
+  const { data: orders = [], isLoading } = useOrders();
   const { data: menuItems = [] } = useMenuItems();
-  const createOrder = useCreateOrder();
-  const updateOrderStatus = useUpdateOrder();
-  const deleteOrder = useDeleteOrder();
+  const createOrderMutation = useCreateOrder();
+  const updateOrderMutation = useUpdateOrder();
+  const deleteOrderMutation = useDeleteOrder();
 
-  const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // Filtering & Sorting
+  const filteredOrders = orders
+    .filter((order) => {
+      const matchSearch =
+        order.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.eventType.toLowerCase().includes(searchTerm.toLowerCase());
 
-  // Helper function to get today's date in YYYY-MM-DD format
-  const getTodayDate = () => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
+      const matchStatus = statusFilter === 'all' || order.status === statusFilter;
+      const matchClient = clientTypeFilter === 'all' || order.clientType === clientTypeFilter;
+
+      return matchSearch && matchStatus && matchClient;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'date') {
+        return b.eventDate.localeCompare(a.eventDate);
+      }
+      return b.totalValue - a.totalValue;
+    });
+
+  const handleOpenCreate = () => {
+    setFormData({
+      clientName: '',
+      clientEmail: '',
+      clientPhone: '',
+      clientType: 'Wedding',
+      eventType: 'Wedding',
+      eventDate: new Date().toISOString().split('T')[0],
+      guestCount: 150,
+      pricePerHead: 2600,
+      advanceReceived: 100000,
+      notes: '',
+      selectedDishes: menuItems.slice(0, 3).map((m) => m.name),
+    });
+    setIsCreateOpen(true);
   };
 
-  // Initialize form with today's date when dialog opens
-  const handleDialogOpen = (open: boolean) => {
-    setIsNewOrderDialogOpen(open);
-    if (open && !formData.event_date && !formData.order_date) {
-      const today = getTodayDate();
-      setFormData(prev => ({
-        ...prev,
-        event_date: today,
-        order_date: today,
-      }));
-    }
-  };
-
-  const handleAddMenuItem = () => {
-    if (!selectedItemId || !selectedItemQuantity) {
-      toast.error('Please select an item and quantity');
+  const handleCreateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.clientName.trim()) {
+      toast.error('Client name is required');
       return;
     }
-    
-    const item = menuItems.find(m => m.id === selectedItemId);
-    if (!item) {
-      toast.error('Menu item not found');
-      return;
-    }
 
-    const quantity = parseInt(selectedItemQuantity);
-    const itemPrice = item.selling_price ?? item.price ?? item.costPerServing ?? 0;
-    
-    if (itemPrice === 0) {
-      toast.warning(`Warning: "${item.name}" has no price set in menu`);
-    }
-    
-    const existingItem = selectedMenuItems.find(m => m.id === selectedItemId);
-    
-    if (existingItem) {
-      // Update quantity if item already added
-      setSelectedMenuItems(selectedMenuItems.map(m => 
-        m.id === selectedItemId 
-          ? { ...m, quantity: m.quantity + quantity }
-          : m
-      ));
-    } else {
-      // Add new item
-      const itemPrice = item.selling_price ?? item.price ?? item.costPerServing ?? 0;
-      setSelectedMenuItems([
-        ...selectedMenuItems,
-        {
-          id: item.id,
-          name: item.name,
-          price: itemPrice,
-          quantity,
-        }
-      ]);
-    }
+    const calculatedTotal = formData.guestCount * formData.pricePerHead;
 
-    setSelectedItemId('');
-    setSelectedItemQuantity('1');
-  };
-
-  const handleRemoveMenuItem = (itemId: string) => {
-    setSelectedMenuItems(selectedMenuItems.filter(m => m.id !== itemId));
-  };
-
-  const calculateTotal = () => {
-    return selectedMenuItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-  };
-
-  // Helper function to format price display
-  const formatPrice = (amount: number) => {
-    if (amount >= 1000) {
-      return `${(amount / 1000).toFixed(1)}K`;
-    }
-    return amount.toLocaleString();
-  };
-
-  const handleCreateOrder = async () => {
-    if (orderType === 'event') {
-      if (!formData.client_name || !formData.event_date || !formData.guest_count || !formData.price_per_head) {
-        toast.error('Please fill in all required fields');
-        return;
+    createOrderMutation.mutate(
+      {
+        clientName: formData.clientName,
+        clientEmail: formData.clientEmail,
+        clientPhone: formData.clientPhone,
+        clientType: formData.clientType,
+        eventType: formData.eventType,
+        eventDate: formData.eventDate,
+        guestCount: formData.guestCount,
+        pricePerHead: formData.pricePerHead,
+        totalValue: calculatedTotal,
+        advanceReceived: formData.advanceReceived,
+        menuItems: formData.selectedDishes,
+        status: formData.advanceReceived > 0 ? 'Confirmed' : 'Inquiry',
+        notes: formData.notes,
+      },
+      {
+        onSuccess: () => {
+          toast.success('Catering order created successfully');
+          setIsCreateOpen(false);
+        },
+        onError: () => toast.error('Failed to create order'),
       }
-
-      try {
-        await createOrder.mutateAsync({
-          client_name: formData.client_name,
-          client_type: formData.client_type,
-          event_date: formData.event_date,
-          event_type: formData.event_type,
-          guest_count: parseInt(formData.guest_count),
-          price_per_head: parseFloat(formData.price_per_head),
-          items: [{
-            menu_item_id: null,
-            item_name: `${formData.event_type} Event (${parseInt(formData.guest_count)} guests)`,
-            quantity: parseInt(formData.guest_count),
-            unit_price: parseFloat(formData.price_per_head),
-          }],
-        });
-        toast.success('Event order created successfully!');
-        setIsNewOrderDialogOpen(false);
-        setFormData({
-          client_name: '',
-          client_type: 'Individual',
-          event_date: '',
-          event_type: '',
-          guest_count: '',
-          price_per_head: '',
-          order_date: '',
-          description: '',
-          total_amount: '',
-        });
-      } catch (error) {
-        toast.error(error.response?.data?.error || 'Failed to create order');
-      }
-    } else {
-      // Solo/Regular order
-      if (!formData.client_name || !formData.order_date || selectedMenuItems.length === 0) {
-        toast.error('Please fill in all required fields and select at least one menu item');
-        return;
-      }
-
-      try {
-        const total = calculateTotal();
-        if (total === 0) {
-          toast.error('Order total cannot be 0. Please check that menu items have prices set.');
-          return;
-        }
-        const itemsDescription = selectedMenuItems
-          .map(item => `${item.quantity}x ${item.name}`)
-          .join(', ');
-
-        await createOrder.mutateAsync({
-          client_name: formData.client_name,
-          client_type: formData.client_type,
-          event_date: formData.order_date,
-          event_type: 'Regular Order',
-          guest_count: 1,
-          price_per_head: total,
-          items: selectedMenuItems.map(item => ({
-            menu_item_id: item.id,
-            item_name: item.name,
-            quantity: item.quantity,
-            unit_price: item.price,
-          })),
-        });
-        toast.success('Order created successfully!');
-        setIsNewOrderDialogOpen(false);
-        setFormData({
-          client_name: '',
-          client_type: 'Individual',
-          event_date: '',
-          event_type: '',
-          guest_count: '',
-          price_per_head: '',
-          order_date: '',
-          description: '',
-          total_amount: '',
-        });
-        setSelectedMenuItems([]);
-        setSelectedItemId('');
-        setSelectedItemQuantity('1');
-      } catch (error) {
-        toast.error(error.response?.data?.error || 'Failed to create order');
-      }
-    }
-  };
-
-  const handleStatusChange = async (orderId: string, newStatus: string) => {
-    try {
-      await updateOrderStatus.mutateAsync({
-        id: orderId,
-        data: { status: newStatus as OrderStatus },
-      });
-      toast.success('Order status updated!');
-    } catch (error) {
-      toast.error('Failed to update status');
-    }
-  };
-
-  const handleDeleteOrder = async (orderId: string) => {
-    if (confirm('Are you sure you want to delete this order?')) {
-      try {
-        await deleteOrder.mutateAsync(orderId);
-        toast.success('Order deleted successfully!');
-      } catch (error) {
-        toast.error('Failed to delete order');
-      }
-    }
-  };
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <DashboardLayout title="Orders" subtitle="Manage all your catering orders">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-gold" />
-        </div>
-      </DashboardLayout>
     );
-  }
+  };
 
-  // Error state
-  if (error) {
-    return (
-      <DashboardLayout title="Orders" subtitle="Manage all your catering orders">
-        <div className="p-8 text-red-500 text-center">
-          Failed to load orders. Make sure the backend server is running.
-          <Button onClick={() => refetch()} className="mt-4">
-            Try Again
-          </Button>
-        </div>
-      </DashboardLayout>
+  const handleOpenEdit = (order: Order) => {
+    setSelectedOrder(order);
+    setFormData({
+      clientName: order.clientName,
+      clientEmail: order.clientEmail || '',
+      clientPhone: order.clientPhone || '',
+      clientType: order.clientType,
+      eventType: order.eventType,
+      eventDate: order.eventDate,
+      guestCount: order.guestCount,
+      pricePerHead: order.pricePerHead,
+      advanceReceived: order.advanceReceived,
+      notes: order.notes || '',
+      selectedDishes: order.menuItems || [],
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrder) return;
+
+    updateOrderMutation.mutate(
+      {
+        id: selectedOrder.id,
+        data: {
+          clientName: formData.clientName,
+          clientEmail: formData.clientEmail,
+          clientPhone: formData.clientPhone,
+          clientType: formData.clientType,
+          eventType: formData.eventType,
+          eventDate: formData.eventDate,
+          guestCount: formData.guestCount,
+          pricePerHead: formData.pricePerHead,
+          advanceReceived: formData.advanceReceived,
+          menuItems: formData.selectedDishes,
+          notes: formData.notes,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success('Order updated successfully');
+          setIsEditOpen(false);
+          setSelectedOrder(null);
+        },
+        onError: () => toast.error('Failed to update order'),
+      }
     );
-  }
+  };
+
+  const handleStatusChange = (order: Order, newStatus: OrderStatus) => {
+    updateOrderMutation.mutate(
+      {
+        id: order.id,
+        data: { status: newStatus },
+      },
+      {
+        onSuccess: () => toast.success(`Order ${order.id} marked as ${newStatus}`),
+        onError: () => toast.error('Failed to update order status'),
+      }
+    );
+  };
+
+  const handleDeleteConfirm = () => {
+    if (!orderToDelete) return;
+    deleteOrderMutation.mutate(orderToDelete.id, {
+      onSuccess: () => {
+        toast.success(`Order ${orderToDelete.id} removed`);
+        setIsDeleteConfirmOpen(false);
+        setOrderToDelete(null);
+      },
+      onError: () => toast.error('Failed to delete order'),
+    });
+  };
 
   return (
-    <DashboardLayout title="Orders" subtitle="Manage all your catering orders">
-      {/* Dialog for New Order */}
-      <Dialog open={isNewOrderDialogOpen} onOpenChange={handleDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="pl-4">
-            <DialogTitle>Create New Order</DialogTitle>
-          </DialogHeader>
-
-          {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto scrollbar-gold">
-            <div className="pl-4 pr-6">
-              {/* Order Type Selector */}
-              <div className="flex gap-2 mb-4">
-                <Button
-                  variant={orderType === 'event' ? 'default' : 'outline'}
-                  className={orderType === 'event' ? 'bg-gold hover:bg-gold-light' : ''}
-                  onClick={() => setOrderType('event')}
-                >
-                  Event Order
-                </Button>
-                <Button
-                  variant={orderType === 'solo' ? 'default' : 'outline'}
-                  className={orderType === 'solo' ? 'bg-gold hover:bg-gold-light' : ''}
-                  onClick={() => setOrderType('solo')}
-                >
-                  Regular Order
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                {/* Common Fields */}
-            <div>
-              <label className="text-sm font-medium">Client Name *</label>
+    <DashboardLayout
+      title="Orders Management"
+      subtitle="Comprehensive contracts, banquets, guest counts, and settlements"
+      actions={
+        <Button
+          onClick={handleOpenCreate}
+          className="bg-terracotta hover:bg-terracotta/90 text-white shadow-xs text-xs h-9"
+        >
+          <Plus className="w-4 h-4 mr-1.5" />
+          Create Order
+        </Button>
+      }
+    >
+      <div className="space-y-6">
+        {/* Filter & Control Bar */}
+        <div className="card-premium p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div className="flex-1 flex flex-wrap items-center gap-2.5">
+            {/* Search Input */}
+            <div className="relative min-w-[200px] flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="e.g., John Smith"
-                value={formData.client_name}
-                onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
+                placeholder="Search by client, ID, or event..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 h-9 bg-card text-xs border-border"
               />
             </div>
-            <div>
-              <label className="text-sm font-medium">Client Type</label>
-              <Select value={formData.client_type} onValueChange={(value) => setFormData({ ...formData, client_type: value as ClientType })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Individual">Individual</SelectItem>
-                  <SelectItem value="Corporate">Corporate</SelectItem>
-                  <SelectItem value="Family">Family</SelectItem>
-                  <SelectItem value="Wedding">Wedding</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            {/* Event Order Fields */}
-            {orderType === 'event' && (
-              <>
-                <div>
-                  <label className="text-sm font-medium">Event Date *</label>
-                  <Input
-                    type="date"
-                    value={formData.event_date}
-                    onChange={(e) => setFormData({ ...formData, event_date: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Event Type</label>
-                  <Input
-                    placeholder="e.g., Wedding, Birthday, Conference"
-                    value={formData.event_type}
-                    onChange={(e) => setFormData({ ...formData, event_type: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Guest Count *</label>
-                  <Input
-                    type="number"
-                    placeholder="e.g., 50"
-                    value={formData.guest_count}
-                    onChange={(e) => setFormData({ ...formData, guest_count: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Price per Head (Rs) *</label>
-                  <Input
-                    type="number"
-                    placeholder="e.g., 500"
-                    value={formData.price_per_head}
-                    onChange={(e) => setFormData({ ...formData, price_per_head: e.target.value })}
-                  />
-                </div>
+            {/* Status Filter */}
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[140px] h-9 text-xs bg-card border-border">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                {STATUS_OPTIONS.map((st) => (
+                  <SelectItem key={st} value={st}>
+                    {st}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-                {/* Auto-calculated Total for Event Orders */}
-                {formData.guest_count && formData.price_per_head && (
-                  <div className="p-3 bg-gold/10 border border-gold/20 rounded-lg">
-                    <p className="text-xs text-muted-foreground mb-1">Estimated Total:</p>
-                    <p className="text-lg font-semibold text-gold">
-                      Rs {(parseInt(formData.guest_count) * parseFloat(formData.price_per_head) || 0).toLocaleString()}
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
+            {/* Client Type Filter */}
+            <Select value={clientTypeFilter} onValueChange={setClientTypeFilter}>
+              <SelectTrigger className="w-[140px] h-9 text-xs bg-card border-border">
+                <SelectValue placeholder="Client Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clients</SelectItem>
+                {CLIENT_TYPES.map((ct) => (
+                  <SelectItem key={ct} value={ct}>
+                    {ct}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-            {/* Solo/Regular Order Fields */}
-            {orderType === 'solo' && (
-              <>
-                <div>
-                  <label className="text-sm font-medium">Order Date *</label>
-                  <Input
-                    type="date"
-                    value={formData.order_date}
-                    onChange={(e) => setFormData({ ...formData, order_date: e.target.value })}
-                  />
-                </div>
+            {/* Sort Toggle */}
+            <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
+              <SelectTrigger className="w-[130px] h-9 text-xs bg-card border-border">
+                <SelectValue placeholder="Sort" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">Latest Date</SelectItem>
+                <SelectItem value="amount">Highest Amount</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-                {/* Menu Item Selection */}
-                <div className="space-y-3 border border-border rounded-lg p-3 bg-secondary/30">
-                  <label className="text-sm font-medium">Select Items *</label>
-                  
-                  <div className="flex gap-2">
-                    <Select value={selectedItemId} onValueChange={setSelectedItemId}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select a menu item..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {menuItems.map((item) => (
-                          <SelectItem key={item.id} value={item.id}>
-                            {item.name} - Rs {(item.selling_price ?? item.price ?? item.costPerServing ?? 0).toLocaleString()}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    
-                    <Input
-                      type="number"
-                      min="1"
-                      placeholder="Qty"
-                      value={selectedItemQuantity}
-                      onChange={(e) => setSelectedItemQuantity(e.target.value)}
-                      className="w-20"
-                    />
-                    
-                    <Button
-                      size="sm"
-                      className="bg-gold hover:bg-gold-light"
-                      onClick={handleAddMenuItem}
-                    >
-                      Add
-                    </Button>
-                  </div>
+          <div className="text-xs font-medium text-muted-foreground self-end md:self-center">
+            Showing <span className="font-bold text-foreground">{filteredOrders.length}</span> of{' '}
+            {orders.length} orders
+          </div>
+        </div>
 
-                  {/* Selected Items List */}
-                  {selectedMenuItems.length > 0 && (
-                    <div className="space-y-2 mt-3 max-h-48 overflow-y-auto scrollbar-gold">
-                      <div className="text-xs font-medium text-muted-foreground sticky top-0 bg-secondary/30 py-1">Order Items:</div>
-                      {selectedMenuItems.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between bg-background p-2 rounded border border-border">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{item.quantity}x {item.name}</p>
-                            <p className="text-xs text-muted-foreground">Rs {(item.quantity * item.price).toLocaleString()}</p>
-                          </div>
+        {/* Orders Data Table */}
+        <div className="card-premium overflow-hidden">
+          <Table>
+            <TableHeader className="bg-secondary/60">
+              <TableRow className="border-border">
+                <TableHead className="font-bold text-xs text-foreground py-3.5">Order ID</TableHead>
+                <TableHead className="font-bold text-xs text-foreground">Client & Event</TableHead>
+                <TableHead className="font-bold text-xs text-foreground">Event Date</TableHead>
+                <TableHead className="font-bold text-xs text-foreground">Guests</TableHead>
+                <TableHead className="font-bold text-xs text-foreground">Total Value</TableHead>
+                <TableHead className="font-bold text-xs text-foreground">Balance</TableHead>
+                <TableHead className="font-bold text-xs text-foreground">Status</TableHead>
+                <TableHead className="text-right font-bold text-xs text-foreground pr-4">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-xs text-muted-foreground">
+                    Loading order records...
+                  </TableCell>
+                </TableRow>
+              ) : filteredOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-12 text-xs text-muted-foreground">
+                    No orders match your filter criteria.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredOrders.map((order) => {
+                  const hasRemaining = order.remainingBalance > 0;
+
+                  return (
+                    <TableRow key={order.id} className="border-border hover:bg-secondary/30 transition-colors">
+                      <TableCell className="font-mono text-xs font-semibold text-muted-foreground">
+                        {order.id}
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-semibold text-xs text-foreground">{order.clientName}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {order.eventType} • <span className="font-medium">{order.clientType}</span>
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-foreground font-medium whitespace-nowrap">
+                        {order.eventDate}
+                      </TableCell>
+                      <TableCell className="text-xs text-foreground">
+                        <span className="font-semibold">{order.guestCount}</span> guests
+                      </TableCell>
+                      <TableCell className="text-xs font-bold text-foreground">
+                        AED {order.totalValue.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {hasRemaining ? (
+                          <span className="font-semibold text-destructive">
+                            AED {order.remainingBalance.toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-success flex items-center gap-1">
+                            ✓ Paid
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={cn('text-[10px] font-medium shadow-none', statusBadgeStyles[order.status])}>
+                          {order.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right pr-4">
+                        <div className="flex items-center justify-end gap-1.5">
                           <Button
-                            size="sm"
                             variant="ghost"
-                            onClick={() => handleRemoveMenuItem(item.id)}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8 p-0"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-secondary"
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setIsDetailsOpen(true);
+                            }}
+                            title="View Details"
                           >
-                            <X className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-secondary"
+                            onClick={() => handleOpenEdit(order)}
+                            title="Edit Order"
+                          >
+                            <Edit className="w-3.5 h-3.5 text-muted-foreground" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-destructive-light text-destructive"
+                            onClick={() => {
+                              setOrderToDelete(order);
+                              setIsDeleteConfirmOpen(true);
+                            }}
+                            title="Delete Order"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
-                      ))}
-                      <div className="border-t border-border pt-2 mt-2">
-                        <p className="text-sm font-semibold flex justify-between">
-                          <span>Total:</span>
-                          <span className="text-gold">Rs {calculateTotal().toLocaleString()}</span>
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* View Order Details Dialog */}
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto p-6">
+          {selectedOrder && (
+            <div>
+              <DialogHeader>
+                <div className="flex items-center justify-between pr-4">
+                  <DialogTitle className="font-display text-xl font-bold">
+                    Order Contract {selectedOrder.id}
+                  </DialogTitle>
+                  <Badge className={cn('text-xs', statusBadgeStyles[selectedOrder.status])}>
+                    {selectedOrder.status}
+                  </Badge>
                 </div>
-              </>
-            )}
-          </div>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  Created on {selectedOrder.createdAt}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 my-4 text-xs">
+                {/* Client & Event Specs */}
+                <div className="p-3.5 bg-secondary/40 rounded-xl space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold">Client Name</span>
+                      <p className="font-bold text-sm text-foreground">{selectedOrder.clientName}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold">Client Type</span>
+                      <p className="font-medium text-foreground">{selectedOrder.clientType}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold">Event Date</span>
+                      <p className="font-semibold text-foreground">{selectedOrder.eventDate}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold">Event Type</span>
+                      <p className="font-medium text-foreground">{selectedOrder.eventType}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold">Guest Count</span>
+                      <p className="font-semibold text-foreground">{selectedOrder.guestCount} guests</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Financial Ledger */}
+                <div className="p-3.5 border border-border rounded-xl space-y-2 bg-card">
+                  <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">Financial Ledger</h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground">Price Per Head</span>
+                      <p className="font-semibold text-foreground">AED {selectedOrder.pricePerHead.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground">Total Contract Value</span>
+                      <p className="font-bold text-sm text-foreground">AED {selectedOrder.totalValue.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground">Advance Received</span>
+                      <p className="font-semibold text-success">AED {selectedOrder.advanceReceived.toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-secondary/50 rounded-lg flex items-center justify-between text-xs mt-2">
+                    <span className="font-semibold">Remaining Balance Due:</span>
+                    <span className="font-bold text-destructive text-sm">
+                      AED {selectedOrder.remainingBalance.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Menu Items */}
+                <div className="p-3.5 border border-border rounded-xl space-y-2">
+                  <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">Culinary Selections</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedOrder.menuItems && selectedOrder.menuItems.length > 0 ? (
+                      selectedOrder.menuItems.map((dish, i) => (
+                        <span key={i} className="px-2.5 py-1 rounded-md bg-secondary text-foreground text-xs font-medium">
+                          {dish}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground italic">Custom kitchen menu</span>
+                    )}
+                  </div>
+                </div>
+
+                {selectedOrder.notes && (
+                  <div className="p-3 bg-secondary/20 rounded-lg">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Service Notes</span>
+                    <p className="text-xs text-foreground mt-0.5">{selectedOrder.notes}</p>
+                  </div>
+                )}
+
+                {/* Status Transitions Workflow */}
+                <div className="pt-2 border-t border-border">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">
+                    Advance Lifecycle Status
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {STATUS_OPTIONS.map((st) => (
+                      <Button
+                        key={st}
+                        size="sm"
+                        variant={selectedOrder.status === st ? 'default' : 'outline'}
+                        className={cn(
+                          'text-xs h-7',
+                          selectedOrder.status === st
+                            ? 'bg-charcoal text-white'
+                            : 'border-border hover:bg-secondary'
+                        )}
+                        onClick={() => {
+                          handleStatusChange(selectedOrder, st);
+                          setSelectedOrder({ ...selectedOrder, status: st });
+                        }}
+                      >
+                        {st}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>          <DialogFooter className="border-t border-border pt-4 mt-4">
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setIsNewOrderDialogOpen(false);
-                setSelectedMenuItems([]);
-                setSelectedItemId('');
-                setSelectedItemQuantity('1');
-              }}
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDetailsOpen(false)}
+                  className="text-xs h-8 border-border"
+                >
+                  Close
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Order Dialog */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto p-6">
+          <form onSubmit={handleCreateSubmit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle className="font-display text-xl font-bold">Create New Catering Contract</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Enter client specs, guest count, and initial advance payment.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <Label htmlFor="clientName" className="text-xs font-semibold">Client / Event Name *</Label>
+                <Input
+                  id="clientName"
+                  required
+                  placeholder="e.g. Danish & Alizeh Wedding Gala"
+                  value={formData.clientName}
+                  onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                  className="mt-1 h-9 bg-card text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="clientType" className="text-xs font-semibold">Client Segment</Label>
+                  <Select
+                    value={formData.clientType}
+                    onValueChange={(val: any) => setFormData({ ...formData, clientType: val })}
+                  >
+                    <SelectTrigger className="mt-1 h-9 text-xs bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CLIENT_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="eventType" className="text-xs font-semibold">Event Format</Label>
+                  <Select
+                    value={formData.eventType}
+                    onValueChange={(val: any) => setFormData({ ...formData, eventType: val })}
+                  >
+                    <SelectTrigger className="mt-1 h-9 text-xs bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVENT_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label htmlFor="eventDate" className="text-xs font-semibold">Event Date</Label>
+                  <Input
+                    id="eventDate"
+                    type="date"
+                    required
+                    value={formData.eventDate}
+                    onChange={(e) => setFormData({ ...formData, eventDate: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="guestCount" className="text-xs font-semibold">Guest Count</Label>
+                  <Input
+                    id="guestCount"
+                    type="number"
+                    min="1"
+                    required
+                    value={formData.guestCount}
+                    onChange={(e) => setFormData({ ...formData, guestCount: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="pricePerHead" className="text-xs font-semibold">Price Per Head (AED)</Label>
+                  <Input
+                    id="pricePerHead"
+                    type="number"
+                    min="100"
+                    required
+                    value={formData.pricePerHead}
+                    onChange={(e) => setFormData({ ...formData, pricePerHead: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-secondary/40 rounded-xl space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-muted-foreground">Estimated Total Value:</span>
+                  <span className="font-bold text-foreground text-sm">
+                    AED {(formData.guestCount * formData.pricePerHead).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-muted-foreground">Initial Advance Received:</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    max={formData.guestCount * formData.pricePerHead}
+                    value={formData.advanceReceived}
+                    onChange={(e) => setFormData({ ...formData, advanceReceived: Number(e.target.value) })}
+                    className="w-36 h-8 text-right bg-card text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold">Select Menu Dishes</Label>
+                <div className="grid grid-cols-2 gap-1.5 mt-1 max-h-36 overflow-y-auto p-2 border border-border rounded-lg bg-card">
+                  {menuItems.map((dish) => {
+                    const isSelected = formData.selectedDishes.includes(dish.name);
+                    return (
+                      <div
+                        key={dish.id}
+                        onClick={() => {
+                          const newDishes = isSelected
+                            ? formData.selectedDishes.filter((d) => d !== dish.name)
+                            : [...formData.selectedDishes, dish.name];
+                          setFormData({ ...formData, selectedDishes: newDishes });
+                        }}
+                        className={cn(
+                          'p-1.5 rounded-md text-xs cursor-pointer border transition-colors flex items-center justify-between',
+                          isSelected
+                            ? 'bg-terracotta/10 border-terracotta text-terracotta font-medium'
+                            : 'border-border hover:bg-secondary text-foreground'
+                        )}
+                      >
+                        <span className="truncate">{dish.name}</span>
+                        {isSelected && <span className="text-[10px]">✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="notes" className="text-xs font-semibold">Service Instructions</Label>
+                <Textarea
+                  id="notes"
+                  rows={2}
+                  placeholder="Special client requests, venue guidelines, table setting style..."
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  className="mt-1 bg-card text-xs"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)} className="text-xs h-9">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-terracotta hover:bg-terracotta/90 text-white text-xs h-9">
+                Save Order
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Order Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto p-6">
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle className="font-display text-xl font-bold">Edit Catering Contract</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <Label htmlFor="editClientName" className="text-xs font-semibold">Client Name</Label>
+                <Input
+                  id="editClientName"
+                  required
+                  value={formData.clientName}
+                  onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                  className="mt-1 h-9 bg-card text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="editClientType" className="text-xs font-semibold">Client Segment</Label>
+                  <Select
+                    value={formData.clientType}
+                    onValueChange={(val: any) => setFormData({ ...formData, clientType: val })}
+                  >
+                    <SelectTrigger className="mt-1 h-9 text-xs bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CLIENT_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="editEventType" className="text-xs font-semibold">Event Format</Label>
+                  <Select
+                    value={formData.eventType}
+                    onValueChange={(val: any) => setFormData({ ...formData, eventType: val })}
+                  >
+                    <SelectTrigger className="mt-1 h-9 text-xs bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVENT_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label htmlFor="editEventDate" className="text-xs font-semibold">Event Date</Label>
+                  <Input
+                    id="editEventDate"
+                    type="date"
+                    required
+                    value={formData.eventDate}
+                    onChange={(e) => setFormData({ ...formData, eventDate: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editGuestCount" className="text-xs font-semibold">Guest Count</Label>
+                  <Input
+                    id="editGuestCount"
+                    type="number"
+                    min="1"
+                    required
+                    value={formData.guestCount}
+                    onChange={(e) => setFormData({ ...formData, guestCount: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editPricePerHead" className="text-xs font-semibold">Price Per Head (AED)</Label>
+                  <Input
+                    id="editPricePerHead"
+                    type="number"
+                    min="100"
+                    required
+                    value={formData.pricePerHead}
+                    onChange={(e) => setFormData({ ...formData, pricePerHead: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="editNotes" className="text-xs font-semibold">Notes</Label>
+                <Textarea
+                  id="editNotes"
+                  rows={2}
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  className="mt-1 bg-card text-xs"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)} className="text-xs h-9">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-charcoal text-white hover:bg-charcoal/90 text-xs h-9">
+                Update Contract
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold text-destructive">
+              Confirm Order Deletion
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-2">
+              Are you sure you want to permanently delete order{' '}
+              <span className="font-bold text-foreground">{orderToDelete?.id}</span> ({orderToDelete?.clientName})?
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              className="text-xs h-9"
             >
               Cancel
             </Button>
             <Button
-              className="bg-gold hover:bg-gold-light"
-              onClick={handleCreateOrder}
-              disabled={createOrder.isPending}
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              className="text-xs h-9"
             >
-              {createOrder.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Order
-                </>
-              )}
+              Confirm Deletion
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Filters Bar */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by client name or order ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-48">
-            <Filter className="w-4 h-4 mr-2" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="Inquiry">Inquiry</SelectItem>
-            <SelectItem value="Confirmed">Confirmed</SelectItem>
-            <SelectItem value="In Progress">In Progress</SelectItem>
-            <SelectItem value="Delivered">Delivered</SelectItem>
-            <SelectItem value="Closed">Closed</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button
-          className="bg-gold hover:bg-gold-light text-primary-foreground"
-          onClick={() => setIsNewOrderDialogOpen(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          New Order
-        </Button>
-      </div>
-
-      {/* Orders Table */}
-      <div className="card-premium overflow-hidden">
-        {filteredOrders.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent border-border">
-                <TableHead className="font-display font-semibold">Order ID</TableHead>
-                <TableHead className="font-display font-semibold">Client</TableHead>
-                <TableHead className="font-display font-semibold">Event Date</TableHead>
-                <TableHead className="font-display font-semibold">Guests</TableHead>
-                <TableHead className="font-display font-semibold">Total</TableHead>
-                <TableHead className="font-display font-semibold">Status</TableHead>
-                <TableHead className="font-display font-semibold">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredOrders.map((order) => (
-                <TableRow key={order.id} className="border-border hover:bg-secondary/50">
-                  <TableCell className="font-mono font-medium">{order.id}</TableCell>
-                  <TableCell>{order.client_name}</TableCell>
-                  <TableCell>{new Date(order.event_date).toLocaleDateString()}</TableCell>
-                  <TableCell>{order.guest_count}</TableCell>
-                  <TableCell className="font-semibold">Rs {formatPrice(order.total_value ?? (order.guest_count ?? 0) * (order.price_per_head ?? 0))}</TableCell>
-                  <TableCell>
-                    <Select 
-                      value={order.status} 
-                      onValueChange={(value) => handleStatusChange(order.id, value)}
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Inquiry">Inquiry</SelectItem>
-                        <SelectItem value="Confirmed">Confirmed</SelectItem>
-                        <SelectItem value="In Progress">In Progress</SelectItem>
-                        <SelectItem value="Delivered">Delivered</SelectItem>
-                        <SelectItem value="Closed">Closed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeleteOrder(order.id)}
-                      disabled={deleteOrder.isPending}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <div className="p-8 text-center text-muted-foreground">
-            No orders found. {orders.length === 0 ? 'Create your first order!' : 'Try different filters.'}
-          </div>
-        )}
-      </div>
     </DashboardLayout>
   );
 }

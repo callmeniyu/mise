@@ -1,4 +1,5 @@
-import { Navigate } from 'react-router-dom';
+import React from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface ProtectedRouteProps {
@@ -7,27 +8,21 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false }) => {
-  const { user, loading, isAdmin, isAuthenticated } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold"></div>
-      </div>
-    );
-  }
+  const { isAuthenticated, isAdmin } = useAuth();
+  const location = useLocation();
 
   if (!isAuthenticated()) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (requireAdmin && !isAdmin()) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-3xl font-display font-bold text-foreground mb-4">Access Denied</h1>
-          <p className="text-muted-foreground mb-6">You don't have permission to access this page.</p>
-          <p className="text-sm text-muted-foreground">Admin privileges required.</p>
+      <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+        <div className="text-center max-w-md p-8 bg-card border border-border rounded-xl shadow-card">
+          <h1 className="text-2xl font-display font-bold text-foreground mb-3">Privilege Restricted</h1>
+          <p className="text-sm text-secondary-foreground mb-6">
+            Administrator privileges are required to access this operational view.
+          </p>
         </div>
       </div>
     );

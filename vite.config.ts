@@ -14,13 +14,14 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  test: {
+    setupFiles: ["./src/__tests__/setup.ts"],
+  },
   build: {
     rollupOptions: {
       output: {
         manualChunks: {
-          // Split React and React DOM into separate chunk
           "react-vendor": ["react", "react-dom", "react-router-dom"],
-          // Split UI library components
           "ui-vendor": [
             "@radix-ui/react-accordion",
             "@radix-ui/react-alert-dialog",
@@ -38,9 +39,7 @@ export default defineConfig(({ mode }) => ({
             "@radix-ui/react-toast",
             "@radix-ui/react-tooltip",
           ],
-          // Split chart library
           "chart-vendor": ["recharts"],
-          // Split form libraries
           "form-vendor": ["react-hook-form", "@hookform/resolvers", "zod"],
         },
       },

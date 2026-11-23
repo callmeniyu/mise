@@ -1,40 +1,36 @@
-
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { notificationsAPI } from '@/lib/api';
+import { notificationsService } from '@/services/notifications.service';
+import { NotificationItem } from '@/types';
 
 export const useNotifications = () => {
-    const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
 
-    const { data: notifications = [], isLoading } = useQuery({
-        queryKey: ['notifications'],
-        queryFn: async () => {
-            const response = await notificationsAPI.getAll();
-            return response.data.data;
-        },
-        refetchInterval: 30000, // Refetch every 30 seconds
-    });
+  const { data: notifications = [], isLoading } = useQuery<NotificationItem[]>({
+    queryKey: ['notifications'],
+    queryFn: async () => notificationsService.getAll(),
+  });
 
-    const markAsReadMutation = useMutation({
-        mutationFn: (id: string) => notificationsAPI.markAsRead(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notifications'] });
-        },
-    });
+  const markAsReadMutation = useMutation({
+    mutationFn: async (id: string) => notificationsService.markAsRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
-    const markAllAsReadMutation = useMutation({
-        mutationFn: () => notificationsAPI.markAllAsRead(),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notifications'] });
-        },
-    });
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => notificationsService.markAllAsRead(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
 
-    const unreadCount = notifications.filter((n: any) => !n.is_read).length;
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
-    return {
-        notifications,
-        isLoading,
-        unreadCount,
-        markAsRead: markAsReadMutation.mutate,
-        markAllAsRead: markAllAsReadMutation.mutate,
-    };
+  return {
+    notifications,
+    isLoading,
+    unreadCount,
+    markAsRead: markAsReadMutation.mutate,
+    markAllAsRead: markAllAsReadMutation.mutate,
+  };
 };

@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { usePurchases, useCreatePurchase, useSuppliers, useCreateSupplier, useDeletePurchase, useDeleteSupplier } from '@/hooks/api';
-import { GroceryPurchase } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -26,505 +25,1054 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { Plus, Search, ShoppingCart, Calendar, TrendingDown, Eye, Loader2, Trash2 } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  ShoppingCart,
+  Building2,
+  Calendar,
+  Banknote,
+  TrendingDown,
+  Edit,
+  Trash2,
+  Eye,
+  CheckCircle2,
+  Phone,
+  Mail,
+  MapPin,
+} from 'lucide-react';
+import {
+  usePurchases,
+  useCreatePurchase,
+  useUpdatePurchase,
+  useDeletePurchase,
+  useSuppliers,
+  useCreateSupplier,
+  useUpdateSupplier,
+  useDeleteSupplier,
+  useInventory,
+  useOrders,
+} from '@/hooks/api';
+import { GroceryPurchase, Supplier, StockUnit } from '@/types';
 import { toast } from 'sonner';
 
+const STOCK_UNITS: StockUnit[] = ['kg', 'liter', 'piece', 'dozen', 'pack', 'gram', 'tin'];
+
 export default function PurchasesPage() {
+  const [activeTab, setActiveTab] = useState<'purchases' | 'suppliers'>('purchases');
   const [searchTerm, setSearchTerm] = useState('');
-  const [isLogPurchaseDialogOpen, setIsLogPurchaseDialogOpen] = useState(false);
-  const [isAddSupplierDialogOpen, setIsAddSupplierDialogOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    item_id: '',
-    supplier_id: '',
-    purchase_date: '',
-    quantity: '',
-    cost: '',
-    ingredient_name: '',
-    unit: 'kg',
+  const [supplierFilter, setSupplierFilter] = useState<string>('all');
+
+  // Purchase Dialogs
+  const [isLogPurchaseOpen, setIsLogPurchaseOpen] = useState(false);
+  const [isEditPurchaseOpen, setIsEditPurchaseOpen] = useState(false);
+  const [selectedPurchase, setSelectedPurchase] = useState<GroceryPurchase | null>(null);
+  const [deletePurchaseConfirm, setDeletePurchaseConfirm] = useState<GroceryPurchase | null>(null);
+
+  // Supplier Dialogs
+  const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+  const [isEditSupplierOpen, setIsEditSupplierOpen] = useState(false);
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [deleteSupplierConfirm, setDeleteSupplierConfirm] = useState<Supplier | null>(null);
+
+  // Purchase Form
+  const [purchaseForm, setPurchaseForm] = useState({
+    supplier: '',
+    supplierId: '',
+    ingredient: '',
+    inventoryItemId: '',
+    quantity: 20,
+    unit: 'kg' as StockUnit,
+    unitPrice: 500,
+    cost: 10000,
+    purchaseDate: new Date().toISOString().split('T')[0],
+    linkedOrderId: '',
+    notes: '',
   });
-  const [supplierFormData, setSupplierFormData] = useState({
+
+  // Supplier Form
+  const [supplierForm, setSupplierForm] = useState({
     name: '',
+    contactPerson: '',
     email: '',
     phone: '',
     address: '',
-    city: '',
+    city: 'Lahore',
+    category: 'Grains & Flour',
   });
 
-  // API hooks
-  const { data: purchases = [], isLoading, error, refetch } = usePurchases();
-  const { data: suppliers = [] } = useSuppliers();
-  const createPurchase = useCreatePurchase();
-  const createSupplier = useCreateSupplier();
-  const deletePurchase = useDeletePurchase();
-  const deleteSupplier = useDeleteSupplier();
+  const { data: purchases = [], isLoading: purchasesLoading } = usePurchases();
+  const { data: suppliers = [], isLoading: suppliersLoading } = useSuppliers();
+  const { data: inventory = [] } = useInventory();
+  const { data: orders = [] } = useOrders();
 
-  const filteredPurchases = purchases.filter(p =>
-    (p.supplier_name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-    (p.ingredient_name?.toLowerCase().includes(searchTerm.toLowerCase()) || false)
-  );
+  const createPurchaseMutation = useCreatePurchase();
+  const updatePurchaseMutation = useUpdatePurchase();
+  const deletePurchaseMutation = useDeletePurchase();
 
-  // Stats
-  const totalSpent = purchases.reduce((acc, p) => acc + ((p.quantity || 0) * (p.unit_price || 0)), 0);
+  const createSupplierMutation = useCreateSupplier();
+  const updateSupplierMutation = useUpdateSupplier();
+  const deleteSupplierMutation = useDeleteSupplier();
+
+  // Financial Metrics
+  const totalSpent = purchases.reduce((sum, p) => sum + p.cost, 0);
   const thisMonthSpent = purchases
-    .filter(p => new Date(p.purchase_date).getMonth() === new Date().getMonth())
-    .reduce((acc, p) => acc + ((p.quantity || 0) * (p.unit_price || 0)), 0);
+    .filter((p) => {
+      const pMonth = p.purchaseDate.substring(0, 7);
+      const currMonth = new Date().toISOString().substring(0, 7);
+      return pMonth === currMonth;
+    })
+    .reduce((sum, p) => sum + p.cost, 0);
 
-  const handleAddSupplier = async () => {
-    if (!supplierFormData.name) {
-      toast.error('Please fill in supplier name');
-      return;
-    }
+  // Filtered Purchases
+  const filteredPurchases = purchases.filter((p) => {
+    const matchSearch =
+      p.ingredient.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.id.toLowerCase().includes(searchTerm.toLowerCase());
 
-    try {
-      await createSupplier.mutateAsync({
-        name: supplierFormData.name,
-        email: supplierFormData.email,
-        phone: supplierFormData.phone,
-        address: supplierFormData.address,
-        city: supplierFormData.city,
-      });
-      toast.success('Supplier added successfully!');
-      setIsAddSupplierDialogOpen(false);
-      setSupplierFormData({
-        name: '',
-        email: '',
-        phone: '',
-        address: '',
-        city: '',
-      });
-    } catch (error) {
-      toast.error('Failed to add supplier');
-    }
-  };
+    const matchSupplier = supplierFilter === 'all' || p.supplier === supplierFilter;
 
-  const handleDeletePurchase = async (purchaseId: string) => {
-    if (confirm('Are you sure you want to delete this purchase?')) {
-      try {
-        await deletePurchase.mutateAsync(purchaseId);
-        toast.success('Purchase deleted successfully!');
-      } catch (error) {
-        toast.error('Failed to delete purchase');
-      }
-    }
-  };
+    return matchSearch && matchSupplier;
+  });
 
-  const handleDeleteSupplier = async (supplierId: string) => {
-    if (confirm('Are you sure you want to delete this supplier?')) {
-      try {
-        await deleteSupplier.mutateAsync(supplierId);
-        toast.success('Supplier deleted successfully!');
-      } catch (error) {
-        toast.error('Failed to delete supplier');
-      }
-    }
-  };
-
-  const handleLogPurchase = async () => {
-    if (!formData.supplier_id || !formData.purchase_date || !formData.quantity || !formData.cost || !formData.ingredient_name || !formData.unit) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    // Get the selected supplier name
-    const selectedSupplier = suppliers.find(s => s.id === formData.supplier_id);
-    if (!selectedSupplier) {
-      toast.error('Invalid supplier selected');
-      return;
-    }
-
-    try {
-      await createPurchase.mutateAsync({
-        supplier_id: formData.supplier_id,
-        supplier_name: selectedSupplier.name,
-        purchase_date: formData.purchase_date,
-        items: [{
-          quantity: parseFloat(formData.quantity),
-          unit_price: parseFloat(formData.cost),
-          ingredient_name: formData.ingredient_name,
-          unit: formData.unit,
-        }],
-      });
-      toast.success('Purchase logged successfully!');
-      setIsLogPurchaseDialogOpen(false);
-      setFormData({
-        item_id: '',
-        supplier_id: '',
-        purchase_date: '',
-        quantity: '',
-        cost: '',
-        ingredient_name: '',
-        unit: 'kg',
-      });
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to log purchase');
-    }
-  };
-
-  // Loading state
-  if (isLoading) {
+  // Filtered Suppliers
+  const filteredSuppliers = suppliers.filter((s) => {
     return (
-      <DashboardLayout title="Purchases" subtitle="Track grocery and supply purchases">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-gold" />
-        </div>
-      </DashboardLayout>
+      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.contactPerson && s.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-  }
+  });
 
-  // Error state
-  if (error) {
-    return (
-      <DashboardLayout title="Purchases" subtitle="Track grocery and supply purchases">
-        <div className="p-8 text-red-500 text-center">
-          Failed to load purchases. Make sure the backend server is running.
-          <Button onClick={() => refetch()} className="mt-4">
-            Try Again
-          </Button>
-        </div>
-      </DashboardLayout>
+  // Open Log Purchase
+  const handleOpenLogPurchase = () => {
+    const defaultSup = suppliers[0];
+    const defaultInv = inventory[0];
+
+    setPurchaseForm({
+      supplier: defaultSup?.name || '',
+      supplierId: defaultSup?.id || '',
+      ingredient: defaultInv?.name || 'Basmati Rice',
+      inventoryItemId: defaultInv?.id || '',
+      quantity: 25,
+      unit: defaultInv?.unit || 'kg',
+      unitPrice: defaultInv?.costPerUnit || 300,
+      cost: (defaultInv?.costPerUnit || 300) * 25,
+      purchaseDate: new Date().toISOString().split('T')[0],
+      linkedOrderId: '',
+      notes: '',
+    });
+    setIsLogPurchaseOpen(true);
+  };
+
+  const handlePurchaseSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!purchaseForm.ingredient.trim() || !purchaseForm.supplier.trim()) {
+      toast.error('Supplier and ingredient are required');
+      return;
+    }
+
+    const calculatedCost = purchaseForm.quantity * purchaseForm.unitPrice;
+
+    createPurchaseMutation.mutate(
+      {
+        supplier: purchaseForm.supplier,
+        supplierId: purchaseForm.supplierId,
+        ingredient: purchaseForm.ingredient,
+        inventoryItemId: purchaseForm.inventoryItemId,
+        quantity: purchaseForm.quantity,
+        unit: purchaseForm.unit,
+        unitPrice: purchaseForm.unitPrice,
+        cost: calculatedCost,
+        purchaseDate: purchaseForm.purchaseDate,
+        linkedOrderId: purchaseForm.linkedOrderId || undefined,
+        notes: purchaseForm.notes,
+        status: 'Completed',
+      },
+      {
+        onSuccess: () => {
+          toast.success('Purchase logged & inventory stock replenished');
+          setIsLogPurchaseOpen(false);
+        },
+        onError: () => toast.error('Failed to log purchase order'),
+      }
     );
-  }
+  };
+
+  const handleEditPurchaseSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPurchase) return;
+
+    const calculatedCost = purchaseForm.quantity * purchaseForm.unitPrice;
+
+    updatePurchaseMutation.mutate(
+      {
+        id: selectedPurchase.id,
+        data: {
+          supplier: purchaseForm.supplier,
+          supplierId: purchaseForm.supplierId,
+          ingredient: purchaseForm.ingredient,
+          quantity: purchaseForm.quantity,
+          unit: purchaseForm.unit,
+          unitPrice: purchaseForm.unitPrice,
+          cost: calculatedCost,
+          purchaseDate: purchaseForm.purchaseDate,
+          linkedOrderId: purchaseForm.linkedOrderId || undefined,
+          notes: purchaseForm.notes,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success('Purchase updated & stock reconciled');
+          setIsEditPurchaseOpen(false);
+          setSelectedPurchase(null);
+        },
+        onError: () => toast.error('Failed to update purchase'),
+      }
+    );
+  };
+
+  const handleDeletePurchaseConfirm = () => {
+    if (!deletePurchaseConfirm) return;
+    deletePurchaseMutation.mutate(deletePurchaseConfirm.id, {
+      onSuccess: () => {
+        toast.success(`Purchase ${deletePurchaseConfirm.id} deleted & stock rolled back`);
+        setDeletePurchaseConfirm(null);
+      },
+      onError: () => toast.error('Failed to delete purchase'),
+    });
+  };
+
+  // Supplier Form Submits
+  const handleOpenAddSupplier = () => {
+    setSupplierForm({
+      name: '',
+      contactPerson: '',
+      email: '',
+      phone: '',
+      address: '',
+      city: 'Lahore',
+      category: 'Grains & Flour',
+    });
+    setIsAddSupplierOpen(true);
+  };
+
+  const handleSupplierSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supplierForm.name.trim()) {
+      toast.error('Supplier name is required');
+      return;
+    }
+
+    createSupplierMutation.mutate(
+      {
+        name: supplierForm.name,
+        contactPerson: supplierForm.contactPerson,
+        email: supplierForm.email,
+        phone: supplierForm.phone,
+        address: supplierForm.address,
+        city: supplierForm.city,
+        category: supplierForm.category,
+      },
+      {
+        onSuccess: () => {
+          toast.success('Supplier profile added');
+          setIsAddSupplierOpen(false);
+        },
+        onError: () => toast.error('Failed to add supplier'),
+      }
+    );
+  };
+
+  const handleEditSupplierSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSupplier) return;
+
+    updateSupplierMutation.mutate(
+      {
+        id: selectedSupplier.id,
+        data: {
+          name: supplierForm.name,
+          contactPerson: supplierForm.contactPerson,
+          email: supplierForm.email,
+          phone: supplierForm.phone,
+          address: supplierForm.address,
+          city: supplierForm.city,
+          category: supplierForm.category,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success('Supplier profile updated');
+          setIsEditSupplierOpen(false);
+          setSelectedSupplier(null);
+        },
+        onError: () => toast.error('Failed to update supplier'),
+      }
+    );
+  };
+
+  const handleDeleteSupplierConfirm = () => {
+    if (!deleteSupplierConfirm) return;
+    deleteSupplierMutation.mutate(deleteSupplierConfirm.id, {
+      onSuccess: (res) => {
+        if (!res.success) {
+          toast.error(res.message || 'Cannot delete supplier');
+        } else {
+          toast.success('Supplier archived');
+        }
+        setDeleteSupplierConfirm(null);
+      },
+      onError: () => toast.error('Failed to delete supplier'),
+    });
+  };
 
   return (
-    <DashboardLayout title="Purchases" subtitle="Track grocery and supply purchases">
-      {/* Dialog for Log Purchase */}
-      <Dialog open={isLogPurchaseDialogOpen} onOpenChange={setIsLogPurchaseDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Log New Purchase</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
+    <DashboardLayout
+      title="Purchases & Vendor Directory"
+      subtitle="Stock replenishment, wholesale purchase orders, and supplier relationships"
+      actions={
+        <div className="flex items-center gap-2">
+          {activeTab === 'purchases' ? (
+            <Button
+              onClick={handleOpenLogPurchase}
+              className="bg-terracotta hover:bg-terracotta/90 text-white shadow-xs text-xs h-9"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Log Purchase Order
+            </Button>
+          ) : (
+            <Button
+              onClick={handleOpenAddSupplier}
+              className="bg-charcoal text-white hover:bg-charcoal/90 shadow-xs text-xs h-9"
+            >
+              <Building2 className="w-4 h-4 mr-1.5 text-sage" />
+              Add Supplier
+            </Button>
+          )}
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        {/* Metric Cards Banner */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="card-premium p-4 flex items-center justify-between">
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium">Supplier *</label>
-                <Button 
-                  size="sm" 
-                  variant="ghost"
-                  onClick={() => setIsAddSupplierDialogOpen(true)}
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">
+                Total Procurement Spend
+              </p>
+              <p className="font-display text-2xl font-bold text-foreground mt-1">
+                AED {totalSpent.toLocaleString()}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-charcoal text-white flex items-center justify-center">
+              <Banknote className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="card-premium p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">
+                Current Month Spend
+              </p>
+              <p className="font-display text-2xl font-bold text-terracotta mt-1">
+                AED {thisMonthSpent.toLocaleString()}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-terracotta-light text-terracotta flex items-center justify-center">
+              <TrendingDown className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="card-premium p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">
+                Active Supplier Partners
+              </p>
+              <p className="font-display text-2xl font-bold text-success mt-1">
+                {suppliers.length} vendors
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-sage-light text-success flex items-center justify-center">
+              <Building2 className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* View Switcher Tabs */}
+        <Tabs value={activeTab} onValueChange={(val: any) => setActiveTab(val)}>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4">
+            <TabsList className="bg-secondary/60 p-1 border border-border h-10 w-fit">
+              <TabsTrigger
+                value="purchases"
+                className="text-xs font-semibold px-4 h-8 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-xs"
+              >
+                <ShoppingCart className="w-3.5 h-3.5 mr-1.5" />
+                Purchases Ledger ({purchases.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="suppliers"
+                className="text-xs font-semibold px-4 h-8 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-xs"
+              >
+                <Building2 className="w-3.5 h-3.5 mr-1.5" />
+                Suppliers Directory ({suppliers.length})
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Global search within page */}
+            <div className="relative min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder={
+                  activeTab === 'purchases'
+                    ? 'Search purchase ingredient, supplier...'
+                    : 'Search vendor name, category, city...'
+                }
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 h-9 bg-card text-xs border-border"
+              />
+            </div>
+          </div>
+
+          {/* TAB 1: PURCHASES */}
+          <TabsContent value="purchases" className="mt-0 space-y-4">
+            <div className="card-premium overflow-hidden">
+              <Table>
+                <TableHeader className="bg-secondary/60">
+                  <TableRow className="border-border">
+                    <TableHead className="font-bold text-xs text-foreground py-3.5">PO Number</TableHead>
+                    <TableHead className="font-bold text-xs text-foreground">Date</TableHead>
+                    <TableHead className="font-bold text-xs text-foreground">Ingredient</TableHead>
+                    <TableHead className="font-bold text-xs text-foreground">Supplier</TableHead>
+                    <TableHead className="font-bold text-xs text-foreground">Quantity</TableHead>
+                    <TableHead className="font-bold text-xs text-foreground">Unit Cost</TableHead>
+                    <TableHead className="font-bold text-xs text-foreground">Total Cost</TableHead>
+                    <TableHead className="font-bold text-xs text-foreground">Linked Order</TableHead>
+                    <TableHead className="text-right font-bold text-xs text-foreground pr-4">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {purchasesLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8 text-xs text-muted-foreground">
+                        Loading purchase ledger...
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredPurchases.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-12 text-xs text-muted-foreground">
+                        No purchase orders found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredPurchases.map((purchase) => (
+                      <TableRow key={purchase.id} className="border-border hover:bg-secondary/30 transition-colors">
+                        <TableCell className="font-mono text-xs font-semibold text-muted-foreground">
+                          {purchase.id}
+                        </TableCell>
+                        <TableCell className="text-xs text-foreground font-medium whitespace-nowrap">
+                          {purchase.purchaseDate}
+                        </TableCell>
+                        <TableCell className="text-xs font-bold text-foreground">
+                          {purchase.ingredient}
+                        </TableCell>
+                        <TableCell className="text-xs text-secondary-foreground font-medium">
+                          {purchase.supplier}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono font-semibold text-foreground">
+                          {purchase.quantity} {purchase.unit}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          AED {purchase.unitPrice.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-xs font-bold text-foreground">
+                          AED {purchase.cost.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono text-muted-foreground">
+                          {purchase.linkedOrderId || '—'}
+                        </TableCell>
+                        <TableCell className="text-right pr-4">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 hover:bg-secondary"
+                              onClick={() => {
+                                setSelectedPurchase(purchase);
+                                setPurchaseForm({
+                                  supplier: purchase.supplier,
+                                  supplierId: purchase.supplierId || '',
+                                  ingredient: purchase.ingredient,
+                                  inventoryItemId: purchase.inventoryItemId || '',
+                                  quantity: purchase.quantity,
+                                  unit: purchase.unit,
+                                  unitPrice: purchase.unitPrice,
+                                  cost: purchase.cost,
+                                  purchaseDate: purchase.purchaseDate,
+                                  linkedOrderId: purchase.linkedOrderId || '',
+                                  notes: purchase.notes || '',
+                                });
+                                setIsEditPurchaseOpen(true);
+                              }}
+                              title="Edit Purchase"
+                            >
+                              <Edit className="w-3.5 h-3.5 text-muted-foreground" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 hover:bg-destructive-light text-destructive"
+                              onClick={() => setDeletePurchaseConfirm(purchase)}
+                              title="Delete Purchase Order"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+
+          {/* TAB 2: SUPPLIERS */}
+          <TabsContent value="suppliers" className="mt-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {suppliersLoading ? (
+                <div className="col-span-full py-12 text-center text-xs text-muted-foreground">
+                  Loading suppliers...
+                </div>
+              ) : filteredSuppliers.length === 0 ? (
+                <div className="col-span-full card-premium p-12 text-center text-sm text-muted-foreground">
+                  No suppliers found matching your query.
+                </div>
+              ) : (
+                filteredSuppliers.map((supplier) => (
+                  <div key={supplier.id} className="card-premium p-5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <Badge variant="outline" className="text-[10px] border-border font-semibold">
+                          {supplier.category}
+                        </Badge>
+                        <span className="text-[11px] font-mono text-muted-foreground">{supplier.id}</span>
+                      </div>
+
+                      <h3 className="font-display text-base font-bold text-foreground mt-1">
+                        {supplier.name}
+                      </h3>
+
+                      {supplier.contactPerson && (
+                        <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                          Rep: {supplier.contactPerson}
+                        </p>
+                      )}
+
+                      <div className="space-y-1.5 mt-3 text-xs text-secondary-foreground">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                          <span>{supplier.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate">{supplier.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate">{supplier.address}, {supplier.city}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+                          Historical Procurement
+                        </span>
+                        <p className="font-bold text-foreground">
+                          AED {(supplier.totalPurchased || 0).toLocaleString()}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:bg-secondary"
+                          onClick={() => {
+                            setSelectedSupplier(supplier);
+                            setSupplierForm({
+                              name: supplier.name,
+                              contactPerson: supplier.contactPerson || '',
+                              email: supplier.email,
+                              phone: supplier.phone,
+                              address: supplier.address,
+                              city: supplier.city,
+                              category: supplier.category,
+                            });
+                            setIsEditSupplierOpen(true);
+                          }}
+                          title="Edit Supplier"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive-light"
+                          onClick={() => setDeleteSupplierConfirm(supplier)}
+                          title="Delete Supplier"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Log Purchase Dialog */}
+      <Dialog open={isLogPurchaseOpen} onOpenChange={setIsLogPurchaseOpen}>
+        <DialogContent className="max-w-md p-6">
+          <form onSubmit={handlePurchaseSubmit} className="space-y-3.5">
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg font-bold">Log New Grocery Purchase</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Automatic stock update: inventory items matching this ingredient will automatically increase.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <Label htmlFor="purSupplier" className="font-semibold text-xs">Supplier *</Label>
+                <Select
+                  value={purchaseForm.supplier}
+                  onValueChange={(val) => {
+                    const s = suppliers.find((sup) => sup.name === val);
+                    setPurchaseForm({ ...purchaseForm, supplier: val, supplierId: s?.id || '' });
+                  }}
                 >
-                  <Plus className="w-4 h-4 mr-1" /> Add New
-                </Button>
-              </div>
-              <Select value={formData.supplier_id} onValueChange={(value) => setFormData({ ...formData, supplier_id: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier.id} value={supplier.id}>
-                      {supplier.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Purchase Date *</label>
-              <Input
-                type="date"
-                value={formData.purchase_date}
-                onChange={(e) => setFormData({ ...formData, purchase_date: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Item/Ingredient Name *</label>
-              <Input
-                type="text"
-                placeholder="e.g., Chicken, Rice, Oil"
-                value={formData.ingredient_name}
-                onChange={(e) => setFormData({ ...formData, ingredient_name: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Quantity & Unit *</label>
-              <div className="flex gap-2">
-                <Input
-                  type="number"
-                  placeholder="e.g., 10"
-                  value={formData.quantity}
-                  onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                  className="flex-1"
-                />
-                <Select value={formData.unit} onValueChange={(value) => setFormData({ ...formData, unit: value })}>
-                  <SelectTrigger className="w-24">
-                    <SelectValue placeholder="Unit" />
+                  <SelectTrigger className="mt-1 h-9 text-xs bg-card">
+                    <SelectValue placeholder="Select supplier" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="kg">kg</SelectItem>
-                    <SelectItem value="g">g</SelectItem>
-                    <SelectItem value="ton">ton</SelectItem>
-                    <SelectItem value="lbs">lbs</SelectItem>
-                    <SelectItem value="oz">oz</SelectItem>
-                    <SelectItem value="L">L</SelectItem>
-                    <SelectItem value="ml">ml</SelectItem>
-                    <SelectItem value="gallon">gallon</SelectItem>
-                    <SelectItem value="cup">cup</SelectItem>
-                    <SelectItem value="tbsp">tbsp</SelectItem>
-                    <SelectItem value="tsp">tsp</SelectItem>
-                    <SelectItem value="pcs">pcs</SelectItem>
-                    <SelectItem value="box">box</SelectItem>
-                    <SelectItem value="bottle">bottle</SelectItem>
-                    <SelectItem value="dozen">dozen</SelectItem>
-                    <SelectItem value="bundle">bundle</SelectItem>
-                    <SelectItem value="can">can</SelectItem>
-                    <SelectItem value="jar">jar</SelectItem>
-                    <SelectItem value="packet">packet</SelectItem>
-                    <SelectItem value="carton">carton</SelectItem>
+                    {suppliers.map((s) => (
+                      <SelectItem key={s.id} value={s.name}>{s.name} ({s.category})</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Cost per Unit (Rs) *</label>
-              <Input
-                type="number"
-                placeholder="e.g., 120"
-                value={formData.cost}
-                onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsLogPurchaseDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-gold hover:bg-gold-light"
-              onClick={handleLogPurchase}
-              disabled={createPurchase.isPending}
-            >
-              {createPurchase.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Logging...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Log Purchase
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Dialog for Add Supplier */}
-      <Dialog open={isAddSupplierDialogOpen} onOpenChange={setIsAddSupplierDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Supplier</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Supplier Name *</label>
-              <Input
-                placeholder="e.g., Fresh Vegetables Ltd"
-                value={supplierFormData.name}
-                onChange={(e) => setSupplierFormData({ ...supplierFormData, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Email</label>
-              <Input
-                type="email"
-                placeholder="supplier@example.com"
-                value={supplierFormData.email}
-                onChange={(e) => setSupplierFormData({ ...supplierFormData, email: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Phone</label>
-              <Input
-                placeholder="0300-1234567"
-                value={supplierFormData.phone}
-                onChange={(e) => setSupplierFormData({ ...supplierFormData, phone: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Address</label>
-              <Input
-                placeholder="Street address"
-                value={supplierFormData.address}
-                onChange={(e) => setSupplierFormData({ ...supplierFormData, address: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">City</label>
-              <Input
-                placeholder="City"
-                value={supplierFormData.city}
-                onChange={(e) => setSupplierFormData({ ...supplierFormData, city: e.target.value })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddSupplierDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-gold hover:bg-gold-light"
-              onClick={handleAddSupplier}
-              disabled={createSupplier.isPending}
-            >
-              {createSupplier.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Adding...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Supplier
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Stats Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gold/10 flex items-center justify-center">
-              <ShoppingCart className="w-5 h-5 text-gold" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total Purchases</p>
-              <p className="font-display text-2xl font-semibold">{purchases.length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
-              <TrendingDown className="w-5 h-5 text-warning" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">This Month</p>
-              <p className="font-display text-2xl font-semibold">Rs {(thisMonthSpent / 1000).toFixed(0)}K</p>
-            </div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-info/10 flex items-center justify-center">
-              <Calendar className="w-5 h-5 text-info" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total Spent</p>
-              <p className="font-display text-2xl font-semibold">Rs {(totalSpent / 1000).toFixed(0)}K</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by supplier or item..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-
-        <Button 
-          className="bg-gold hover:bg-gold-light text-primary-foreground"
-          onClick={() => setIsLogPurchaseDialogOpen(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Log Purchase
-        </Button>
-      </div>
-
-      {/* Purchases Table */}
-      <div className="card-premium overflow-hidden">
-        {filteredPurchases.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent border-border">
-                <TableHead className="font-display font-semibold">Supplier</TableHead>
-                <TableHead className="font-display font-semibold">Item</TableHead>
-                <TableHead className="font-display font-semibold">Date</TableHead>
-                <TableHead className="font-display font-semibold">Quantity</TableHead>
-                <TableHead className="font-display font-semibold">Unit Price</TableHead>
-                <TableHead className="font-display font-semibold">Total</TableHead>
-                <TableHead className="font-display font-semibold">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredPurchases.map((purchase) => (
-                <TableRow key={`${purchase.id}-${purchase.ingredient_name}`} className="border-border hover:bg-secondary/50">
-                  <TableCell className="text-sm text-muted-foreground">{purchase.supplier_name}</TableCell>
-                  <TableCell className="font-medium">{purchase.ingredient_name || 'N/A'}</TableCell>
-                  <TableCell className="text-sm">
-                    {new Date(purchase.purchase_date).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-sm font-medium">{purchase.quantity} {purchase.unit}</TableCell>
-                  <TableCell className="font-semibold">Rs {purchase.unit_price?.toLocaleString()}</TableCell>
-                  <TableCell className="font-semibold text-gold">Rs {((purchase.quantity || 0) * (purchase.unit_price || 0)).toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeletePurchase(purchase.id)}
-                      disabled={deletePurchase.isPending}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <div className="p-8 text-center text-muted-foreground">
-            No purchases found. {purchases.length === 0 ? 'Log your first purchase!' : 'Try different filters.'}
-          </div>
-        )}
-      </div>
-
-      {/* Suppliers Section */}
-      <div className="card-premium overflow-hidden mt-6">
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Suppliers</h3>
-            <Button 
-              size="sm"
-              className="bg-gold hover:bg-gold-light text-primary-foreground"
-              onClick={() => setIsAddSupplierDialogOpen(true)}
-            >
-              <Plus className="w-4 h-4 mr-1" /> Add New
-            </Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {suppliers.map((supplier) => (
-              <div key={supplier.id} className="p-4 border border-border rounded-lg flex items-between justify-between">
-                <div>
-                  <p className="font-medium">{supplier.name}</p>
-                  <p className="text-sm text-muted-foreground">{supplier.email}</p>
-                  <p className="text-sm text-muted-foreground">{supplier.phone}</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDeleteSupplier(supplier.id)}
-                  disabled={deleteSupplier.isPending}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              <div>
+                <Label htmlFor="purItem" className="font-semibold text-xs">Ingredient Item *</Label>
+                <Select
+                  value={purchaseForm.ingredient}
+                  onValueChange={(val) => {
+                    const inv = inventory.find((i) => i.name === val);
+                    setPurchaseForm({
+                      ...purchaseForm,
+                      ingredient: val,
+                      inventoryItemId: inv?.id || '',
+                      unit: inv?.unit || purchaseForm.unit,
+                      unitPrice: inv?.costPerUnit || purchaseForm.unitPrice,
+                    });
+                  }}
                 >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                  <SelectTrigger className="mt-1 h-9 text-xs bg-card">
+                    <SelectValue placeholder="Select inventory ingredient" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {inventory.map((inv) => (
+                      <SelectItem key={inv.id} value={inv.name}>
+                        {inv.name} (Stock: {inv.currentStock} {inv.unit})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>    </DashboardLayout>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label htmlFor="purQty" className="font-semibold text-xs">Quantity</Label>
+                  <Input
+                    id="purQty"
+                    type="number"
+                    min="1"
+                    required
+                    value={purchaseForm.quantity}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="purUnit" className="font-semibold text-xs">Unit</Label>
+                  <Input
+                    id="purUnit"
+                    readOnly
+                    value={purchaseForm.unit}
+                    className="mt-1 h-9 bg-secondary/50 text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="purPrice" className="font-semibold text-xs">Unit Cost (AED)</Label>
+                  <Input
+                    id="purPrice"
+                    type="number"
+                    min="1"
+                    required
+                    value={purchaseForm.unitPrice}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, unitPrice: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-secondary/50 rounded-xl flex items-center justify-between text-xs">
+                <span>Total PO Purchase Cost:</span>
+                <span className="font-bold text-sm text-foreground">
+                  AED {(purchaseForm.quantity * purchaseForm.unitPrice).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="purDate" className="font-semibold text-xs">Purchase Date</Label>
+                  <Input
+                    id="purDate"
+                    type="date"
+                    required
+                    value={purchaseForm.purchaseDate}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, purchaseDate: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="purLinkedOrder" className="font-semibold text-xs">Linked Order (optional)</Label>
+                  <Select
+                    value={purchaseForm.linkedOrderId}
+                    onValueChange={(val) => setPurchaseForm({ ...purchaseForm, linkedOrderId: val })}
+                  >
+                    <SelectTrigger className="mt-1 h-9 text-xs bg-card truncate">
+                      <SelectValue placeholder="General Stock" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">General Inventory (No Order)</SelectItem>
+                      {orders.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.id}: {o.clientName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsLogPurchaseOpen(false)} className="text-xs h-9">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-terracotta hover:bg-terracotta/90 text-white text-xs h-9">
+                Log Purchase Order
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Purchase Dialog */}
+      <Dialog open={isEditPurchaseOpen} onOpenChange={setIsEditPurchaseOpen}>
+        <DialogContent className="max-w-md p-6">
+          <form onSubmit={handleEditPurchaseSubmit} className="space-y-3.5">
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg font-bold">Edit Purchase Order</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="font-semibold text-xs">Quantity</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={purchaseForm.quantity}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <Label className="font-semibold text-xs">Unit Price (AED)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={purchaseForm.unitPrice}
+                    onChange={(e) => setPurchaseForm({ ...purchaseForm, unitPrice: Number(e.target.value) })}
+                    className="mt-1 h-9 bg-card text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="font-semibold text-xs">Purchase Date</Label>
+                <Input
+                  type="date"
+                  value={purchaseForm.purchaseDate}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, purchaseDate: e.target.value })}
+                  className="mt-1 h-9 bg-card text-xs"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditPurchaseOpen(false)} className="text-xs h-9">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-charcoal text-white hover:bg-charcoal/90 text-xs h-9">
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Purchase Confirmation */}
+      <Dialog open={!!deletePurchaseConfirm} onOpenChange={(open) => !open && setDeletePurchaseConfirm(null)}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold text-destructive">
+              Delete Purchase Record
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-2">
+              Deleting this purchase will automatically roll back{' '}
+              <span className="font-bold text-foreground">
+                {deletePurchaseConfirm?.quantity} {deletePurchaseConfirm?.unit}
+              </span>{' '}
+              from inventory stock. Are you sure you wish to proceed?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeletePurchaseConfirm(null)} className="text-xs h-9">
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeletePurchaseConfirm} className="text-xs h-9">
+              Confirm Rollback & Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Supplier Dialog */}
+      <Dialog open={isAddSupplierOpen} onOpenChange={setIsAddSupplierOpen}>
+        <DialogContent className="max-w-md p-6">
+          <form onSubmit={handleSupplierSubmit} className="space-y-3.5">
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg font-bold">Add Supplier Profile</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <Label htmlFor="supName" className="font-semibold text-xs">Company Name *</Label>
+                <Input
+                  id="supName"
+                  required
+                  placeholder="e.g. Grain Masters & Co."
+                  value={supplierForm.name}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
+                  className="mt-1 h-9 bg-card text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="supRep" className="font-semibold text-xs">Contact Person</Label>
+                  <Input
+                    id="supRep"
+                    placeholder="Representative name"
+                    value={supplierForm.contactPerson}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, contactPerson: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="supCat" className="font-semibold text-xs">Primary Category</Label>
+                  <Input
+                    id="supCat"
+                    placeholder="e.g. Poultry & Meat"
+                    value={supplierForm.category}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, category: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="supPhone" className="font-semibold text-xs">Phone Number</Label>
+                  <Input
+                    id="supPhone"
+                    placeholder="+92 300 0000000"
+                    value={supplierForm.phone}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="supEmail" className="font-semibold text-xs">Email</Label>
+                  <Input
+                    id="supEmail"
+                    type="email"
+                    placeholder="orders@vendor.demo"
+                    value={supplierForm.email}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <Label htmlFor="supAddr" className="font-semibold text-xs">Address</Label>
+                  <Input
+                    id="supAddr"
+                    placeholder="Street or terminal"
+                    value={supplierForm.address}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, address: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="supCity" className="font-semibold text-xs">City</Label>
+                  <Input
+                    id="supCity"
+                    value={supplierForm.city}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, city: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsAddSupplierOpen(false)} className="text-xs h-9">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-charcoal text-white hover:bg-charcoal/90 text-xs h-9">
+                Save Vendor
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Supplier Dialog */}
+      <Dialog open={isEditSupplierOpen} onOpenChange={setIsEditSupplierOpen}>
+        <DialogContent className="max-w-md p-6">
+          <form onSubmit={handleEditSupplierSubmit} className="space-y-3.5">
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg font-bold">Edit Supplier Profile</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <Label htmlFor="editSupName" className="font-semibold text-xs">Company Name</Label>
+                <Input
+                  id="editSupName"
+                  required
+                  value={supplierForm.name}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
+                  className="mt-1 h-9 bg-card text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="editSupRep" className="font-semibold text-xs">Contact Person</Label>
+                  <Input
+                    id="editSupRep"
+                    value={supplierForm.contactPerson}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, contactPerson: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editSupCat" className="font-semibold text-xs">Category</Label>
+                  <Input
+                    id="editSupCat"
+                    value={supplierForm.category}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, category: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="editSupPhone" className="font-semibold text-xs">Phone</Label>
+                  <Input
+                    id="editSupPhone"
+                    value={supplierForm.phone}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editSupEmail" className="font-semibold text-xs">Email</Label>
+                  <Input
+                    id="editSupEmail"
+                    value={supplierForm.email}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
+                    className="mt-1 h-9 bg-card text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditSupplierOpen(false)} className="text-xs h-9">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-charcoal text-white hover:bg-charcoal/90 text-xs h-9">
+                Save Profile
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Supplier Confirmation */}
+      <Dialog open={!!deleteSupplierConfirm} onOpenChange={(open) => !open && setDeleteSupplierConfirm(null)}>
+        <DialogContent className="max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold text-destructive">
+              Delete Supplier
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-2">
+              Are you sure you want to remove <span className="font-bold text-foreground">{deleteSupplierConfirm?.name}</span>?
+              If this supplier is referenced by existing purchase orders, deletion will be safely rejected to prevent broken audit history.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeleteSupplierConfirm(null)} className="text-xs h-9">
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSupplierConfirm} className="text-xs h-9">
+              Confirm Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </DashboardLayout>
   );
 }

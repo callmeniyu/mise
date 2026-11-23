@@ -1,65 +1,78 @@
 import { InventoryItem } from '@/types';
-import { AlertTriangle, Package } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { AlertTriangle, ArrowRight, PackageOpen } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface LowStockAlertProps {
   items: InventoryItem[];
 }
 
-export function LowStockAlert({ items }: LowStockAlertProps) {
-  const lowStockItems = items.filter(item => item.currentStock <= item.minimumStock);
-
-  if (lowStockItems.length === 0) {
-    return (
-      <div className="card-premium p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center">
-            <Package className="w-5 h-5 text-success" />
+export function LowStockAlert({ items = [] }: LowStockAlertProps) {
+  return (
+    <div className="card-premium p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-warning-light text-warning flex items-center justify-center">
+            <AlertTriangle className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="font-display text-lg font-semibold text-foreground">Stock Status</h3>
-            <p className="text-sm text-muted-foreground">All items well stocked</p>
+            <h3 className="font-display text-base font-bold text-foreground">Stock Alerts</h3>
+            <p className="text-[11px] text-muted-foreground">Items requiring replenishment</p>
           </div>
         </div>
-        <p className="text-sm text-success">✓ No low stock alerts</p>
-      </div>
-    );
-  }
 
-  return (
-    <div className="card-premium p-6 border-warning/20 bg-gradient-to-br from-warning/5 to-transparent">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-warning/10 flex items-center justify-center">
-          <AlertTriangle className="w-5 h-5 text-warning" />
-        </div>
-        <div>
-          <h3 className="font-display text-lg font-semibold text-foreground">Low Stock Alert</h3>
-          <p className="text-sm text-muted-foreground">{lowStockItems.length} items need restocking</p>
-        </div>
+        <Link
+          to="/inventory"
+          className="text-xs text-terracotta hover:underline font-semibold flex items-center gap-1"
+        >
+          Manage <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
 
-      <div className="space-y-3">
-        {lowStockItems.map((item) => {
-          const stockPercentage = (item.currentStock / item.minimumStock) * 100;
-          const isCritical = stockPercentage < 50;
-          
-          return (
-            <div key={item.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-              <div>
-                <p className="font-medium text-sm text-foreground">{item.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {item.currentStock} / {item.minimumStock} {item.unit}
-                </p>
+      <div className="space-y-2.5 mt-2">
+        {items.length === 0 ? (
+          <div className="text-center py-6 text-xs text-muted-foreground">
+            <PackageOpen className="w-8 h-8 mx-auto mb-1 text-sage opacity-70" />
+            All inventory levels are currently healthy.
+          </div>
+        ) : (
+          items.map((item) => {
+            const isCritical = item.currentStock === 0;
+
+            return (
+              <div
+                key={item.id}
+                className="p-2.5 rounded-lg border border-border bg-card hover:bg-secondary/40 transition-colors flex items-center justify-between text-xs"
+              >
+                <div className="min-w-0 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-foreground truncate">{item.name}</span>
+                    {isCritical && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-destructive text-white uppercase">
+                        Out
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    Supplier: {item.supplierName}
+                  </p>
+                </div>
+
+                <div className="text-right flex-shrink-0">
+                  <span
+                    className={`font-mono font-bold ${
+                      isCritical ? 'text-destructive' : 'text-warning'
+                    }`}
+                  >
+                    {item.currentStock} {item.unit}
+                  </span>
+                  <p className="text-[10px] text-muted-foreground">
+                    Min: {item.minimumStock} {item.unit}
+                  </p>
+                </div>
               </div>
-              <span className={cn(
-                "text-xs font-semibold px-2 py-1 rounded-full",
-                isCritical ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning"
-              )}>
-                {isCritical ? 'Critical' : 'Low'}
-              </span>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );

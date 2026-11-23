@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { useNavigate, Link, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
-import config from '@/config';
+import { MiseLogo } from '@/components/brand/MiseLogo';
+import { Sparkles, ArrowRight, ShieldCheck, Database, Check } from 'lucide-react';
 
-const LoginPage = () => {
+export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, isAuthenticated } = useAuth();
+  const { login, loginDemo, isAuthenticated, demoCredentials } = useAuth();
+
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
+    email: demoCredentials.email,
+    password: demoCredentials.password,
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -22,140 +23,140 @@ const LoginPage = () => {
     return <Navigate to="/" replace />;
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-    setError('');
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    try {
-      const response = await fetch(`${config.apiUrl}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify(formData),
-      });
+    const result = login(formData);
+    setIsLoading(false);
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
-
-      login(data.data.user);
-
-      // Redirect to dashboard
-      navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Failed to login. Please try again.');
-    } finally {
-      setIsLoading(false);
+    if (result.success) {
+      navigate('/', { replace: true });
+    } else {
+      setError(result.error || 'Authentication error.');
     }
   };
 
+  const handleInstantDemoLogin = () => {
+    loginDemo();
+    navigate('/', { replace: true });
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-secondary/20 to-gold/10 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gold to-gold-light flex items-center justify-center">
-              <span className="text-2xl font-display font-bold text-primary">RI</span>
+    <div className="min-h-screen bg-background text-foreground flex flex-col justify-between p-4 sm:p-8">
+      {/* Top Bar */}
+      <header className="max-w-6xl w-full mx-auto flex items-center justify-between">
+        <MiseLogo />
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground border border-border flex items-center gap-1.5">
+          <Database className="w-3.5 h-3.5 text-sage" />
+          Browser-Only Prototype
+        </span>
+      </header>
+
+      {/* Main Login Canvas */}
+      <main className="max-w-md w-full mx-auto my-8">
+        <div className="card-premium p-6 sm:p-8 shadow-elevated bg-card border-border">
+          {/* Editorial Brand Header */}
+          <div className="text-center mb-6">
+            <h1 className="font-display text-3xl font-bold text-foreground tracking-tight">
+              Sign In to Command
+            </h1>
+            <p className="text-xs text-secondary-foreground mt-1.5">
+              High-artisan restaurant, catering banquet, and costing management
+            </p>
+          </div>
+
+          {/* One-Click Instant Demo Access Button */}
+          <div className="mb-6 p-4 rounded-xl bg-charcoal text-white text-center space-y-2.5">
+            <div className="flex items-center justify-center gap-1.5 text-butter text-xs font-semibold uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Full Access Demo Available</span>
+            </div>
+            <p className="text-[11px] text-sidebar-muted leading-relaxed">
+              Explore live orders, ingredient inventory, recipe costing, and payment simulation instantly.
+            </p>
+            <Button
+              type="button"
+              onClick={handleInstantDemoLogin}
+              className="w-full bg-terracotta hover:bg-terracotta/90 text-white font-semibold text-xs h-9 shadow-sm"
+            >
+              Enter Demo Account <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </Button>
+          </div>
+
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+              <span className="bg-card px-3 text-muted-foreground">Or Sign In with Credentials</span>
             </div>
           </div>
-          <CardTitle className="text-2xl text-center font-display">Welcome Back</CardTitle>
-          <CardDescription className="text-center">
-            Sign in to your Restaurant Inventory Manager account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             {error && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" className="py-2.5 text-xs">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="font-semibold text-xs text-foreground">
+                Email Address
+              </Label>
               <Input
                 id="email"
-                name="email"
                 type="email"
-                placeholder="your@email.com"
-                value={formData.email}
-                onChange={handleChange}
                 required
-                disabled={isLoading}
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="h-9 bg-card text-xs border-border"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="font-semibold text-xs text-foreground">
+                Password
+              </Label>
               <Input
                 id="password"
-                name="password"
                 type="password"
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={handleChange}
                 required
-                disabled={isLoading}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="h-9 bg-card text-xs border-border"
               />
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-gold hover:bg-gold-light"
               disabled={isLoading}
+              className="w-full bg-charcoal hover:bg-charcoal/90 text-white text-xs h-9 mt-2"
             >
-              {isLoading ? 'Signing in...' : 'Sign In'}
+              {isLoading ? 'Verifying...' : 'Sign In'}
             </Button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => window.location.href = `${config.apiUrl}/api/auth/google`}
-              disabled={isLoading}
-            >
-              <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-              </svg>
-              Continue with Google
-            </Button>
-
-            <div className="text-center text-sm text-muted-foreground">
-              Don't have an account?{' '}
-              <Link to="/signup" className="text-gold hover:text-gold-light font-medium">
-                Sign up
-              </Link>
-            </div>
           </form>
-        </CardContent>
-      </Card>
+
+          {/* Demo Credentials Box */}
+          <div className="mt-6 p-3 rounded-lg bg-secondary/50 border border-border/80 text-[11px] text-secondary-foreground space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-foreground">
+              <ShieldCheck className="w-3.5 h-3.5 text-sage" />
+              <span>Standard Demo Credentials:</span>
+            </div>
+            <div className="flex justify-between items-center font-mono text-[10px] pt-1">
+              <span>Email: <strong className="text-foreground">{demoCredentials.email}</strong></span>
+              <span>Pass: <strong className="text-foreground">{demoCredentials.password}</strong></span>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="text-center text-[11px] text-muted-foreground">
+        <p>Mise Culinary Operations Platform • Standalone LocalStorage Architecture</p>
+      </footer>
     </div>
   );
-};
-
-export default LoginPage;
+}
